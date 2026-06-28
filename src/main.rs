@@ -308,7 +308,7 @@ async fn get_setup_info(Path(_assistant): Path<String>) -> impl IntoResponse {
         Ok(dir) => dir.to_string_lossy().into_owned(),
         Err(_) => "".to_string(),
     };
-    let home_dir_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/home/chenting"));
+    let home_dir_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/home/user"));
     let home_dir = home_dir_path.to_string_lossy().into_owned();
 
     let anti_dir = db::get_antigravity_dir();

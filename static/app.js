@@ -239,6 +239,13 @@ const i18n = {
     codex_setup_modal_title: '⚙️ Codex CLI 前置說明與使用指南',
     codex_empty_title: '歡迎使用 Codex CLI Token Insights Dashboard',
     codex_empty_desc: '我們偵測到您的 <code>~/.codex</code> 本地目錄中目前沒有使用數據。這是因為您尚未啟用 Codex CLI。請點選下方按鈕查看啟用教學！',
+    codex_setup_modal_intro: '本 Dashboard 主要是解析並呈現 Codex CLI 的本地會話事件與 Token 數據。因為 Codex CLI 會自動將會話記錄在 <code>~/.codex/sessions</code> 目錄下，您不需要進行任何腳本設定或狀態列修改，本 Dashboard 就會自動讀取並進行即時同步！',
+    codex_setup_step_1: '<span>1️⃣</span> 1. 確認 Codex CLI 已在使用',
+    codex_setup_step_1_desc: '只要您在終端機中執行過 Codex CLI 進行過對話，會話檔案就會自動生成在此目錄中。',
+    codex_setup_step_2: '<span>2️⃣</span> 2. 偵測路徑狀態',
+    codex_setup_step_2_desc: '目前偵測到的 Codex 目錄為：<code id="lbl-detected-home-codex">~/.codex</code>。本系統會以極高效率對該目錄進行即時掃描與分析。',
+    codex_setup_step_3: '<span>3️⃣</span> 3. 費用估算邏輯',
+    codex_setup_step_3_desc: '費用會根據您的對話模型以 Token 數量為基準進行即時估算，排除快取部分後得出實際成本。',
   },
   'en': {
     title: 'AI CLI Token Insights',
@@ -434,6 +441,13 @@ const i18n = {
     codex_setup_modal_title: '⚙️ Codex CLI Guide & User Instructions',
     codex_empty_title: 'Welcome to Codex CLI Token Insights Dashboard',
     codex_empty_desc: 'We detected that there is currently no usage data in your local <code>~/.codex</code> directory. This is because you haven\'t used Codex CLI yet. Please click the button below to view the setup guide!',
+    codex_setup_modal_intro: 'This dashboard parses and visualizes local session events and Token data of Codex CLI. Since Codex CLI automatically records sessions in the <code>~/.codex/sessions</code> directory, you do not need to configure any scripts or status lines. The dashboard will automatically read and synchronize in real-time!',
+    codex_setup_step_1: '<span>1️⃣</span> 1. Ensure Codex CLI is in use',
+    codex_setup_step_1_desc: 'As long as you have run Codex CLI in your terminal and had a conversation, the session files will be automatically generated in this directory.',
+    codex_setup_step_2: '<span>2️⃣</span> 2. Detect Path Status',
+    codex_setup_step_2_desc: 'Currently detected Codex directory: <code id="lbl-detected-home-codex">~/.codex</code>. The system will scan and analyze this directory in real-time with high efficiency.',
+    codex_setup_step_3: '<span>3️⃣</span> 3. Pricing Logic',
+    codex_setup_step_3_desc: 'Costs are estimated in real-time based on the number of tokens used by your conversational model, excluding cached portions to compute actual costs.',
   }
 };
 

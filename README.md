@@ -128,7 +128,7 @@
    {
      "statusLine": {
        "type": "command",
-       "command": "/home/chenting/.gemini/antigravity-cli/statusline-token.sh",
+       "command": "$HOME/.gemini/antigravity-cli/statusline-token.sh",
        "padding": 1
      }
    }
@@ -149,7 +149,7 @@
    {
      "statusLine": {
        "type": "command",
-       "command": "/home/chenting/.copilot/statusline-token.sh",
+       "command": "$HOME/.copilot/statusline-token.sh",
        "padding": 1
      }
    }
