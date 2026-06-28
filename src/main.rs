@@ -160,6 +160,7 @@ struct SessionSummary {
     parent_session_id: Option<String>,
     agent_nickname: Option<String>,
     agent_role: Option<String>,
+    reasoning_effort: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -343,12 +344,11 @@ async fn get_usage_details(Path((assistant, date)): Path<(String, String)>) -> i
 
     let entries_res: Result<Vec<(UsageEntry, String)>, String> = tokio::task::spawn_blocking(move || {
         let conn = db::get_db_conn()?;
-        
         let mut query = "SELECT 
                 timestamp, session_id, session_name, transcript_path, cwd, version, turn_no, model, model_id,
                 tokens_input, tokens_output, tokens_cache_read, tokens_reasoning, tokens_total,
                 delta_input, delta_output, delta_cache_read, delta_reasoning, delta_total,
-                duration_ms, premium_requests, parent_session_id, agent_nickname, agent_role, assistant_type
+                duration_ms, premium_requests, parent_session_id, agent_nickname, agent_role, assistant_type, reasoning_effort
              FROM usage_entries WHERE date = ?".to_string();
         let mut params_vec = Vec::new();
         params_vec.push(rusqlite::types::Value::Text(date_clone));
@@ -420,6 +420,7 @@ async fn get_usage_details(Path((assistant, date)): Path<(String, String)>) -> i
                 parent_session_id: row.get(21).ok(),
                 agent_nickname: row.get(22).ok(),
                 agent_role: row.get(23).ok(),
+                reasoning_effort: row.get(25).ok(),
             }, ast_type));
         }
         Ok(entries)
@@ -521,6 +522,7 @@ async fn get_usage_details(Path((assistant, date)): Path<(String, String)>) -> i
             parent_session_id: last_entry.parent_session_id.clone(),
             agent_nickname: last_entry.agent_nickname.clone(),
             agent_role: last_entry.agent_role.clone(),
+            reasoning_effort: last_entry.reasoning_effort.clone(),
         });
     }
 
@@ -552,6 +554,7 @@ enum TimelineItem {
         model: String,
         tokens: Option<TokenStats>,
         duration_ms: Option<u64>,
+        reasoning_effort: Option<String>,
     },
     ToolStep {
         timestamp: String,
@@ -733,7 +736,7 @@ async fn get_session_details(Path((assistant, session_id)): Path<(String, String
                     }),
                 }
             }
-            TimelineItem::AgentReply { timestamp, reply, reasoning, turn_no, model, tokens, duration_ms: _ } => {
+            TimelineItem::AgentReply { timestamp, reply, reasoning, turn_no, model, tokens, duration_ms: _, reasoning_effort } => {
                 let reply_content = if let Some(r) = reasoning {
                     format!("<details><summary>🧠 LLM Reasoning Process</summary>\n{}\n</details>\n\n{}", r, reply)
                 } else {
@@ -745,6 +748,7 @@ async fn get_session_details(Path((assistant, session_id)): Path<(String, String
                         "timestamp": timestamp,
                         "reply": reply_content,
                         "model": model,
+                        "reasoning_effort": reasoning_effort,
                         "input_tokens": tokens.as_ref().map(|t| t.input),
                         "output_tokens": tokens.as_ref().map(|t| t.output),
                         "cache_read_tokens": tokens.as_ref().and_then(|t| t.cache_read),
@@ -846,6 +850,7 @@ fn parse_antigravity_timeline(
                     model: model_name,
                     tokens,
                     duration_ms: None,
+                    reasoning_effort: None,
                 });
                 turn_no += 1;
             }
@@ -982,6 +987,7 @@ fn parse_copilot_timeline(
                             model: model_name,
                             tokens,
                             duration_ms: None,
+                            reasoning_effort: None,
                         });
 
                         if has_seen_user_prompt {
@@ -1106,6 +1112,8 @@ fn parse_codex_timeline(
     let mut seen_turn_ids = Vec::new();
     let mut active_turn_id: Option<String> = None;
     let mut current_model = "gpt-5.3-Codex".to_string();
+    let mut current_effort: Option<String> = None;
+    let mut current_context: Option<serde_json::Value> = None;
     let mut tool_calls_map = HashMap::new();
 
     for line_res in reader.lines() {
@@ -1123,6 +1131,12 @@ fn parse_codex_timeline(
             if let Some(p) = payload { turn_id = p.get("turn_id").and_then(|id| id.as_str()).map(|s| s.to_string()); }
         } else if event_type == "response_item" {
             if let Some(meta) = event.get("metadata") { turn_id = meta.get("turn_id").and_then(|id| id.as_str()).map(|s| s.to_string()); }
+            if turn_id.is_none() {
+                turn_id = event.get("internal_chat_message_metadata_passthrough")
+                    .and_then(|m| m.get("turn_id"))
+                    .and_then(|id| id.as_str())
+                    .map(|s| s.to_string());
+            }
         }
 
         if let Some(tid) = turn_id {
@@ -1158,9 +1172,14 @@ fn parse_codex_timeline(
                     if let Some(m) = p.get("model").and_then(|v| v.as_str()) {
                         current_model = m.to_string();
                     }
-                    let prompt = p.get("prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let context = p.get("context").cloned();
-                    timeline.push(TimelineItem::UserPrompt { timestamp, prompt, context, turn_no });
+                    if let Some(eff) = p.get("effort")
+                        .or_else(|| p.get("collaboration_mode").and_then(|cm| cm.get("settings")).and_then(|s| s.get("reasoning_effort")))
+                        .and_then(|v| v.as_str()) {
+                        current_effort = Some(eff.to_string());
+                    }
+                    if let Some(ctx) = p.get("context") {
+                        current_context = Some(ctx.clone());
+                    }
                 }
             }
             "compacted" => {
@@ -1224,8 +1243,18 @@ fn parse_codex_timeline(
             }
             "response_item" => {
                 if let Some(p) = payload {
-                    if p.get("role").and_then(|r| r.as_str()) == Some("assistant") {
-                        let reply = p.get("reply").and_then(|r| r.as_str()).unwrap_or("").to_string();
+                    let role = p.get("role").and_then(|r| r.as_str());
+                    if role == Some("assistant") {
+                        let mut reply = p.get("reply").and_then(|r| r.as_str()).unwrap_or("").to_string();
+                        if reply.is_empty() {
+                            if let Some(content_arr) = p.get("content").and_then(|c| c.as_array()) {
+                                for item in content_arr {
+                                    if let Some(txt) = item.get("text").and_then(|t| t.as_str()) {
+                                        reply.push_str(txt);
+                                    }
+                                }
+                            }
+                        }
                         let reasoning = p.get("reasoning").and_then(|r| r.as_str()).map(|s| s.to_string());
                         
                         let (tokens, model_name) = if let Some((stats, model)) = db_entries.get(&turn_no) {
@@ -1235,6 +1264,15 @@ fn parse_codex_timeline(
                             (None, current_model.clone())
                         };
 
+                        // Remove existing AgentReply for this turn_no to avoid duplicates
+                        timeline.retain(|item| {
+                            if let TimelineItem::AgentReply { turn_no: existing_turn_no, .. } = item {
+                                *existing_turn_no != turn_no
+                            } else {
+                                true
+                            }
+                        });
+
                         timeline.push(TimelineItem::AgentReply {
                             timestamp,
                             reply,
@@ -1243,6 +1281,25 @@ fn parse_codex_timeline(
                             model: model_name,
                             tokens,
                             duration_ms: None,
+                            reasoning_effort: current_effort.clone(),
+                        });
+                    } else if role == Some("user") {
+                        let mut prompt = p.get("prompt").and_then(|r| r.as_str()).unwrap_or("").to_string();
+                        if prompt.is_empty() {
+                            if let Some(content_arr) = p.get("content").and_then(|c| c.as_array()) {
+                                for item in content_arr {
+                                    if let Some(txt) = item.get("text").and_then(|t| t.as_str()) {
+                                        prompt.push_str(txt);
+                                    }
+                                }
+                            }
+                        }
+                        let context = p.get("context").cloned().or_else(|| current_context.clone());
+                        timeline.push(TimelineItem::UserPrompt {
+                            timestamp,
+                            prompt,
+                            context,
+                            turn_no,
                         });
                     }
                 }
@@ -1251,6 +1308,9 @@ fn parse_codex_timeline(
         }
     }
     metadata.insert("selected_model".to_string(), serde_json::Value::String(current_model));
+    if let Some(eff) = current_effort {
+        metadata.insert("reasoning_effort".to_string(), serde_json::Value::String(eff));
+    }
 }
 
 /// API 5: 獲取可用的有使用記錄月份
@@ -1366,7 +1426,7 @@ async fn get_monthly_details(Path((assistant, year_month)): Path<(String, String
                 timestamp, session_id, session_name, transcript_path, cwd, version, turn_no, model, model_id,
                 tokens_input, tokens_output, tokens_cache_read, tokens_reasoning, tokens_total,
                 delta_input, delta_output, delta_cache_read, delta_reasoning, delta_total,
-                duration_ms, premium_requests, parent_session_id, agent_nickname, agent_role, assistant_type
+                duration_ms, premium_requests, parent_session_id, agent_nickname, agent_role, assistant_type, reasoning_effort
              FROM usage_entries WHERE date LIKE ?".to_string();
         let mut params_vec = Vec::new();
         params_vec.push(rusqlite::types::Value::Text(query_month));
@@ -1438,6 +1498,7 @@ async fn get_monthly_details(Path((assistant, year_month)): Path<(String, String
                 parent_session_id: row.get(21).ok(),
                 agent_nickname: row.get(22).ok(),
                 agent_role: row.get(23).ok(),
+                reasoning_effort: row.get(25).ok(),
             }, ast_type));
         }
         Ok(entries)

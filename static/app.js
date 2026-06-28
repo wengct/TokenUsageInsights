@@ -133,6 +133,7 @@ const i18n = {
     drawer_repo: '專案庫',
     drawer_branch: 'Git 分支',
     drawer_model: 'Model',
+    drawer_effort: '推理能力',
     drawer_input: '輸入',
     drawer_output: '輸出',
     drawer_reasoning: '推理',
@@ -327,6 +328,7 @@ const i18n = {
     drawer_repo: 'Repository',
     drawer_branch: 'Git Branch',
     drawer_model: 'Model',
+    drawer_effort: 'Reasoning Effort',
     drawer_input: 'Input',
     drawer_output: 'Output',
     drawer_reasoning: 'Reasoning',
@@ -1731,7 +1733,12 @@ function renderSessionTable(sessions) {
         ${nameCellContent}
       </td>
       ${astColumn}
-      <td><span class="badge highlight">${escapeHtml(s.model)}</span></td>
+      <td>
+        <div style="display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;">
+          <span class="badge highlight">${escapeHtml(s.model)}</span>
+          ${s.reasoning_effort ? `<span class="badge" style="background: rgba(167, 139, 250, 0.15); color: #a78bfa; font-size: 11px; font-weight: 600; text-transform: uppercase;">${escapeHtml(s.reasoning_effort)}</span>` : ''}
+        </div>
+      </td>
       <td><span class="badge">${s.max_turn_no}</span></td>
       <td style="color: var(--text-secondary);">${formatToken(s.total_input_tokens || 0)}</td>
       <td style="color: var(--text-secondary);">${formatToken(s.total_output_tokens || 0)}</td>
@@ -1757,7 +1764,8 @@ function renderSessionTable(sessions) {
         s.model,
         s.assistant_type,
         s.agent_nickname,
-        s.agent_role
+        s.agent_role,
+        s.reasoning_effort
       );
     });
 
@@ -1815,6 +1823,11 @@ async function openSessionTimeline(sessionId, sessionName, totalTokens, cacheRea
   document.getElementById('meta-cwd').textContent = cwd || '-';
   document.getElementById('meta-cwd').title = cwd || '';
   document.getElementById('meta-model').textContent = model || '-';
+  const metaEffort = document.getElementById('meta-effort');
+  if (metaEffort) {
+    metaEffort.textContent = '-';
+    metaEffort.style.display = 'none';
+  }
   document.getElementById('meta-tokens').textContent = formatToken(totalTokens || 0);
   document.getElementById('meta-cache').textContent = formatToken(cacheReadTokens || 0);
   document.getElementById('meta-compaction').textContent = '-';
@@ -1907,6 +1920,16 @@ function renderTimeline(data) {
     if (roleContainer) roleContainer.style.display = 'flex';
   } else {
     if (roleContainer) roleContainer.style.display = 'none';
+  }
+
+  const metaEffort = document.getElementById('meta-effort');
+  if (metaEffort) {
+    if (metadata.reasoning_effort) {
+      metaEffort.textContent = metadata.reasoning_effort;
+      metaEffort.style.display = 'inline-block';
+    } else {
+      metaEffort.style.display = 'none';
+    }
   }
 
   // 取得最終使用的 Token 數據（若單一 session events 日誌無 token stats，則使用列表正確累積數據）
@@ -2038,6 +2061,8 @@ function renderTimeline(data) {
         const reasoningTokens = item.event_data.reasoning_tokens;
         const totalTokens = item.event_data.total_tokens || ((inTokens || outTokens) ? ((inTokens || 0) + (outTokens || 0)) : null);
         const turnNo = item.event_data.turn_no || currentTurnNo;
+        const reasoningEffort = item.event_data.reasoning_effort;
+        const modelDisplay = reasoningEffort ? `${model} (${t('drawer_effort')}: ${reasoningEffort})` : model;
 
         // 如果 content 為空但有 Tool 呼叫，代表助理正在使用工具
         let replyHtml = '';
@@ -2079,7 +2104,7 @@ function renderTimeline(data) {
             <div class="bubble-header">
               <div class="header-left">
                 <span class="turn-no-badge">#${turnNo}</span>
-                <span class="sender">${t('sender_agent')} (${escapeHtml(model)})</span>
+                <span class="sender">${t('sender_agent')} (${escapeHtml(modelDisplay)})</span>
               </div>
               <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                 ${copyButtonHtml}

@@ -50,6 +50,7 @@ pub struct UsageEntry {
     pub parent_session_id: Option<String>,
     pub agent_nickname: Option<String>,
     pub agent_role: Option<String>,
+    pub reasoning_effort: Option<String>,
 }
 
 // Codex helper structs
@@ -69,6 +70,7 @@ struct ParsedTurnData {
     cwd: Option<String>,
     duration_ms: Option<u64>,
     total_token_usage: Option<TokenCountUsage>,
+    reasoning_effort: Option<String>,
 }
 
 /// Directory resolution helpers
@@ -188,10 +190,14 @@ pub fn init_db(conn: &Connection) -> Result<(), String> {
             -- Codex-specific fields
             parent_session_id TEXT,
             agent_nickname TEXT,
-            agent_role TEXT
+            agent_role TEXT,
+            reasoning_effort TEXT
         )",
         [],
     ).map_err(|e| format!("建立 usage_entries 表失敗: {}", e))?;
+
+    // Ensure reasoning_effort column is present in case database already exists
+    let _ = conn.execute("ALTER TABLE usage_entries ADD COLUMN reasoning_effort TEXT", []);
 
     // Unique index on assistant, session, and turn
     conn.execute(
@@ -544,6 +550,12 @@ fn parse_codex_session_file(
             if let Some(meta) = event.get("metadata") {
                 turn_id = meta.get("turn_id").and_then(|id| id.as_str()).map(|s| s.to_string());
             }
+            if turn_id.is_none() {
+                turn_id = event.get("internal_chat_message_metadata_passthrough")
+                    .and_then(|m| m.get("turn_id"))
+                    .and_then(|id| id.as_str())
+                    .map(|s| s.to_string());
+            }
         }
 
         if let Some(tid) = turn_id {
@@ -558,6 +570,7 @@ fn parse_codex_session_file(
                     cwd: None,
                     duration_ms: None,
                     total_token_usage: None,
+                    reasoning_effort: None,
                 });
             }
         }
@@ -571,6 +584,12 @@ fn parse_codex_session_file(
                         }
                         if td.cwd.is_none() {
                             td.cwd = p.get("cwd").and_then(|c| c.as_str()).map(|s| s.to_string());
+                        }
+                        if td.reasoning_effort.is_none() {
+                            td.reasoning_effort = p.get("effort")
+                                .or_else(|| p.get("collaboration_mode").and_then(|cm| cm.get("settings")).and_then(|s| s.get("reasoning_effort")))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
                         }
                     }
                 } else if event_type == "response_item" {
@@ -685,6 +704,7 @@ fn parse_codex_session_file(
                 parent_session_id: parent_session_id.clone(),
                 agent_nickname: agent_nickname.clone(),
                 agent_role: agent_role.clone(),
+                reasoning_effort: td.reasoning_effort.clone(),
             });
         }
     }
@@ -763,8 +783,8 @@ fn sync_codex_usage_logs(conn: &Connection) -> Result<(), String> {
                         assistant_type, timestamp, date, session_id, session_name, transcript_path, cwd, version, turn_no, model, model_id,
                         tokens_input, tokens_output, tokens_cache_read, tokens_reasoning, tokens_total,
                         delta_input, delta_output, delta_cache_read, delta_reasoning, delta_total,
-                        duration_ms, premium_requests, parent_session_id, agent_nickname, agent_role
-                    ) VALUES ('codex', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        duration_ms, premium_requests, parent_session_id, agent_nickname, agent_role, reasoning_effort
+                    ) VALUES ('codex', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     params![
                         entry.timestamp,
                         session_date,
@@ -790,7 +810,8 @@ fn sync_codex_usage_logs(conn: &Connection) -> Result<(), String> {
                         cost.and_then(|c| c.total_premium_requests.map(|r| r as i64)),
                         entry.parent_session_id.as_deref(),
                         entry.agent_nickname.as_deref(),
-                        entry.agent_role.as_deref()
+                        entry.agent_role.as_deref(),
+                        entry.reasoning_effort.as_deref()
                     ],
                 );
 
