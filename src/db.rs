@@ -80,7 +80,7 @@ pub fn get_insights_dir() -> PathBuf {
         }
     }
     if let Some(home) = dirs::home_dir() {
-        let p = home.join(".gemini/antigravity-cli");
+        let p = home.join(".token-usage-insights");
         if !p.exists() {
             let _ = fs::create_dir_all(&p);
         }
@@ -129,6 +129,22 @@ pub fn get_codex_dir() -> PathBuf {
 pub fn get_db_conn() -> Result<Connection, String> {
     let dir = get_insights_dir();
     let db_path = dir.join("token_usage_insights.db");
+    
+    // Automatically move old centralized database if it exists in the legacy folder
+    if !db_path.exists() {
+        if let Some(home) = dirs::home_dir() {
+            let old_unified_db = home.join(".gemini/antigravity-cli/token_usage_insights.db");
+            if old_unified_db.exists() {
+                println!("🔄 偵測到存在於舊位置的統一資料庫，正在移動至新位置：{:?} -> {:?}", old_unified_db, db_path);
+                if let Err(e) = fs::rename(&old_unified_db, &db_path) {
+                    eprintln!("⚠️ 移動舊統一資料庫失敗: {}", e);
+                } else {
+                    println!("✅ 統一資料庫移動完成！");
+                }
+            }
+        }
+    }
+
     let conn = Connection::open(&db_path).map_err(|e| format!("無法開啟資料庫: {}", e))?;
     let _ = conn.busy_timeout(std::time::Duration::from_millis(15000));
     Ok(conn)
