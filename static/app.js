@@ -1,0 +1,3304 @@
+// Globals
+let tokenChartInstance = null;
+let monthlyChartInstance = null;
+let activeTab = 'daily'; // 'daily' or 'monthly'
+let isEmptyState = false;
+let currentAssistant = 'antigravity';
+let currentChartSessions = [];
+let currentMonthlyBreakdown = [];
+let currentSessionTotalTokens = 0;
+let currentSessionCacheTokens = 0;
+let currentSessionInputTokens = 0;
+let currentSessionOutputTokens = 0;
+let currentSessionReasoningTokens = 0;
+let currentSessionCwd = '';
+let currentSessionModel = '';
+let availableDates = [];
+let pricingRules = [];
+
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Session table sorting state
+let currentSessions = [];
+let currentSortColumn = 'timestamp'; // Default sorted by starting time
+let currentSortDirection = 'desc';  // Default chronological order
+
+// Monthly daily summary sorting state
+let monthlyDailySortColumn = 'date';
+let monthlyDailySortDirection = 'desc';
+
+// Live Auto-Refresh State
+let liveRefreshTimer = null;
+let liveProgressTimer = null;
+let secondsRemaining = 10;
+let refreshInterval = 10000; // default 10s
+
+// Language / Internationalization (i18n) State
+let currentLang = localStorage.getItem('lang') || 'zh-TW';
+let currentUsageData = null;
+let currentMonthlyData = null;
+
+const i18n = {
+  'zh-TW': {
+    title: 'Token Usage Insights',
+    select_assistant: '選擇 Agent 類型',
+    assistant_all: '🌟 全部 Agent (總覽)',
+    assistant_antigravity: '🤖 Antigravity CLI',
+    assistant_copilot: '🐱 GitHub Copilot CLI',
+    assistant_codex: '⚡ Codex CLI',
+    col_assistant: 'Agent',
+    tab_daily: '📊 每日即時',
+    tab_monthly: '📅 月度彙整',
+    select_date: '選擇日期',
+    today_btn: '今日',
+    this_month_btn: '今月',
+    prev_month_btn: '上個月',
+    next_month_btn: '下個月',
+    detected_new_day: '已跨日，自動切換至新的一天：',
+    select_month: '選擇月份',
+    loading: '載入中...',
+    no_logs: '無使用日誌記錄',
+    no_month_logs: '無月份日誌記錄',
+    reload_data: '重新載入數據',
+    live_refresh: '即時自動刷新',
+    refresh_interval: '刷新頻率:',
+    seconds: '秒',
+    status_preparing: '準備中...',
+    status_monitoring: '監控中 (將於 {sec}s 後刷新)',
+    status_failed: '更新失敗，等待下一次嘗試...',
+    quick_stats_title: '當日彙整指標',
+    stat_total_sessions: '總 Session 數',
+    stat_total_tokens: '總 Token 消耗',
+    stat_cache_read: '快取讀取: {val}',
+    stat_api_duration: '累積 API 耗時',
+    stat_total_requests: '總請求次數',
+    select_date_prompt: '請選擇日期以載入數據',
+    header_description: '一站式監控與分析您本地終端 AI Agent 的 Token 消耗與會話詳細數據',
+    setup_guide: '啟用教學',
+    setup_guide_title: '前置作業啟用教學',
+    theme_toggle_title_dark: '切換至淺色主題',
+    theme_toggle_title_light: '切換至深色主題',
+    total_tokens_label: '總消耗 Token',
+    input_tokens_label: '輸入 Token',
+    output_tokens_label: '輸出 Token',
+    reasoning_tokens_label: '推理 Token',
+    cache_read_label: '快取讀取',
+    ratio_label: '佔比',
+    total_label: '總計',
+    chart_daily_title: 'Token 消耗趨勢與快取狀況',
+    chart_token_label: 'Session 總 Token',
+    chart_cache_label: '快取讀取 Token',
+    chart_turn_label: '對話 Turn 數',
+    chart_monthly_title: '單月每日 Token 消耗與會話數趨勢',
+    chart_monthly_token_label: '月總 Token 消耗',
+    chart_monthly_session_label: '每日會話數',
+    sessions_table_title: '今日會話列表 (Sessions)',
+    col_session: '會話',
+    col_model: 'Model',
+    col_turns: 'Turn 數',
+    col_input: '輸入',
+    col_output: '輸出',
+    col_reasoning: '推理',
+    col_cache: '快取',
+    col_total: '總計',
+    col_cost: '估算費用',
+    col_duration: '耗時',
+    col_time: '時間',
+    estimated_cost_label: '估算費用',
+    stat_cost_desc: '基於 pricing.csv 的估計金額',
+    btn_pricing_sheet: '費用標準',
+    pricing_sheet_title: '💰 Google Antigravity 費用標準表',
+    pricing_intro: '此費用為本地估算，單價依據 <code>pricing.csv</code> 載入。單位為 1M Tokens (每百萬個 Token) 的美金價格：',
+    placeholder_select_date: '請先在左側選擇一個日期',
+    placeholder_no_sessions: '今日無任何會話記錄',
+    monthly_tokens_label: '月總消耗 Token',
+    monthly_input_label: '月輸入 Token',
+    monthly_output_label: '月輸出 Token',
+    monthly_sessions_label: '月總會話數',
+    monthly_requests_count: '總請求: {count} 次',
+    monthly_projects_title: '🏢 最常活動的專案目錄',
+    monthly_models_title: '🤖 使用的模型佔比',
+    col_rank: '排名',
+    col_project_cwd: '工作路徑 (CWD)',
+    col_sessions_count: '會話數',
+    placeholder_no_projects: '本月無任何專案記錄',
+    placeholder_no_models: '本月無模型數據',
+    drawer_category: '會話對話重建',
+    drawer_cwd: '工作路徑',
+    drawer_repo: '專案庫',
+    drawer_branch: 'Git 分支',
+    drawer_model: 'Model',
+    drawer_input: '輸入',
+    drawer_output: '輸出',
+    drawer_reasoning: '推理',
+    drawer_cache: '快取',
+    drawer_compaction: '壓縮次數',
+    drawer_total: '總計',
+    drawer_loading: '對話時間軸還原中...',
+    drawer_load_failed_cleaned: '無法載入此 Session 事件，可能對應的 events.jsonl 檔案已被系統清理。',
+    drawer_load_failed: '載入時間軸失敗。',
+    drawer_no_events: '此會話無任何事件記錄',
+    drawer_no_events_yet: '💬 此會話尚未開始交談，events.jsonl 尚未產生。',
+    sender_user: '👤 USER',
+    sender_agent: '🤖 ANTIGRAVITY AGENT',
+    thinking_tools: '思考中：調用工具指令...',
+    copy_markdown: '複製 Markdown',
+    copy_markdown_title: '複製 LLM 回答的原始 Markdown 內容',
+    expand_reply: '展開回覆',
+    collapse_reply: '收摺回覆',
+    no_returned_data: '無回傳資料',
+    data_truncated: '... [資料過長已被看板截斷顯示] ...',
+    tool_arguments: '調用參數 (Arguments)',
+    tool_result: '執行輸出 (Result)',
+    session_started: '會話開始 (Session Started)',
+    session_ended: '會話結束 (Session Ended)',
+    session_compaction: '會話狀態壓縮完成 (Session Compaction Completed)',
+    reload_success: '數據已成功重新整理',
+    reload_failed: '重新整理失敗',
+    monthly_reload_success: '月度數據已成功重新整理',
+    live_refresh_enabled: '即時自動重新整理已開啟',
+    live_refresh_disabled: '即時自動重新整理已關閉',
+    live_refresh_failed: '即時刷新失敗:',
+    date_not_found: '找不到該日期的數據',
+    load_failed: '讀取數據失敗',
+    server_conn_failed: '無法連接到伺服器 API',
+    month_not_found: '找不到該月份的數據',
+    monthly_load_failed: '載入月份彙整數據失敗',
+    copy_success: '✅ 已複製！',
+    copy_failed: '複製失敗，請手動選取複製',
+    setup_modal_title: '⚙️ Google Antigravity CLI 前置設定與啟用教學',
+    setup_modal_intro: '本 Dashboard 主要是解析並呈現 Google Antigravity CLI 的 <strong>Status Line (狀態列)</strong> 所收集的 Token 數據。我們將使用 <code>~/.antigravity/statusline-token.sh</code> 進行每日數據統計與會話紀錄。',
+    setup_step_1: '<span>1️⃣</span> 1. 確認 script 有執行權限',
+    setup_step_1_desc: '首先建立設定目錄，並將專案中的收集腳本複製至家目錄的 <code>.antigravity</code> 目錄下，最後賦予執行權限：',
+    btn_copy_cmd: '📋 複製指令',
+    setup_step_2: '<span>2️⃣</span> 2. 編輯設定檔',
+    setup_step_2_desc: '編輯或新增 Antigravity CLI 的設定檔 <code>~/.gemini/antigravity-cli/settings.json</code>：',
+    setup_step_2_desc2: '在設定檔中加入以下 <code>statusLine</code> 設定內容：',
+    btn_copy_config: '📋 複製配置 JSON',
+    setup_home_hint_title: '💡 Home 目錄路徑提示：',
+    setup_home_hint_desc: '如果您的 <code>$HOME</code> 家目錄不是 <code id="lbl-detected-home">/home/&lt;username&gt;</code>，可在終端機執行 <code style="background: rgba(255,255,255,0.15)">echo $HOME</code> 查詢您的家目錄路徑，並對應修改 <code>command</code> 欄位的值。',
+    setup_step_3: '<span>3️⃣</span> 3. 已經有其他設定時（不要覆蓋）',
+    setup_step_3_desc: '若您的 <code>settings.json</code> 中已經有其他現成設定，<strong>請勿整檔覆蓋</strong>，只需將 <code>statusLine</code> 屬性合併加入即可，例如：',
+    btn_copy_merge_example: '📋 複製合併範例',
+    setup_step_4: '<span>4️⃣</span> 4. 重開 Antigravity CLI',
+    setup_step_4_desc: '設定完成並存檔後，請<strong>退出目前的 Antigravity CLI 聊天會話，並重新進入</strong>以套用全新設定。',
+    setup_step_5: '<span>5️⃣</span> 5. 檢查是否成功',
+    setup_step_5_desc: '進入 Antigravity CLI 會話聊天後，畫面底部應該會看到由本專案腳本收集並精緻渲染出的狀態列，如：',
+    setup_troubleshooting: '⚠️ 除錯與檢查 (Troubleshooting)：',
+    setup_troubleshoot_a: '🔍 <strong>A. 若狀態列未正常出現，請先單獨測試腳本是否能正常執行：</strong>',
+    setup_troubleshoot_b: '🔍 <strong>B. 請確認 <code>settings.json</code> 是合法的 JSON 格式：</strong>',
+    empty_title: '歡迎使用 Google Antigravity CLI Token Insights Dashboard',
+    empty_desc: '我們偵測到您的 <code>~/.antigravity</code> 本地目錄中目前沒有使用數據。這是因為您還沒有啟用 Google Antigravity CLI 的 Status Line 並部署數據收集腳本。請點選下方按鈕查看啟用教學！',
+    no_agent_selected_title: '請選取至少一個 Agent 類型',
+    no_agent_selected_desc: '您目前尚未選取任何 Agent 類型。請在左側側邊欄勾選/點擊選取至少一個 Agent (例如 Antigravity CLI, GitHub Copilot CLI, Codex CLI) 以呈現數據。',
+    btn_empty_setup: '⚙️ 啟用前置設定教學',
+    btn_empty_refresh: '🔄 重新整理檢查',
+    usage_report: '使用量報告：',
+    loading_prefix: '載入中: ',
+    loading_month_prefix: '載入月份數據中: ',
+    monthly_report: '月度統計報告：',
+    cache_prefix: '快取: ',
+    sync_db: '同步資料',
+    sync_db_title: '立即同步日誌檔到 SQLite 資料庫',
+    sync_db_loading: '正在同步日誌檔到資料庫...',
+    sync_db_success: '資料庫同步成功！',
+    sync_db_failed: '同步失敗: ',
+    monthly_daily_summary_title: '📅 當月每日彙總',
+    col_date: '日期',
+    placeholder_no_daily_summary: '本月無每日彙總數據',
+    no_data_for_date: '此 Agent 於當日無資料',
+    no_data_for_date_desc: '{agent} 在 {date} 沒有任何使用記錄。您可以選擇其他日期，或切換至其他 Agent 查看。',
+    antigravity_title: 'Google Antigravity CLI Token Insights 看板',
+    antigravity_header_description: '本地監控與分析您的 Google Antigravity CLI 的 Token 消耗與會話詳細數據',
+    antigravity_pricing_sheet_title: '💰 Google Antigravity 費用標準表',
+    antigravity_setup_modal_title: '⚙️ Google Antigravity CLI 前置設定與啟用教學',
+    antigravity_empty_title: '歡迎使用 Google Antigravity CLI Token Insights Dashboard',
+    antigravity_empty_desc: '我們偵測到您的 <code>~/.antigravity</code> 本地目錄中目前沒有使用數據。這是因為您還沒有啟用 Google Antigravity CLI 的 Status Line 並部署數據收集腳本。請點選下方按鈕查看啟用教學！',
+    copilot_title: 'GitHub Copilot CLI Token Insights 看板',
+    copilot_header_description: '本地監控與分析您的 GitHub Copilot CLI 的 Token 消耗與會話詳細數據',
+    copilot_pricing_sheet_title: '💰 GitHub Copilot 費用標準表',
+    copilot_setup_modal_title: '⚙️ GitHub Copilot CLI 前置設定與啟用教學',
+    copilot_empty_title: '歡迎使用 GitHub Copilot CLI Token Insights Dashboard',
+    copilot_empty_desc: '我們偵測到您的 <code>~/.copilot</code> 本地目錄中目前沒有使用數據。這是因為您還沒有啟用 GitHub Copilot CLI 的 Status Line 並部署數據收集腳本。請點選下方按鈕查看啟用教學！',
+    copilot_setup_modal_intro: '本 Dashboard 主要是解析並呈現 GitHub Copilot CLI 的 <strong>Status Line (狀態列)</strong> 所收集的 Token 數據。我們將使用 <code>~/.copilot/statusline-token.sh</code> 進行每日數據統計與會話紀錄。',
+    copilot_setup_step_1_desc: '首先建立設定目錄，並將專案中的收集腳本複製至家目錄的 <code>.copilot</code> 目錄下，最後賦予執行權限：',
+    copilot_setup_step_2_desc: '編輯或新增 Copilot CLI 的設定檔 <code>~/.copilot/settings.json</code>：',
+    copilot_setup_step_4: '<span>4️⃣</span> 4. 重開 Copilot CLI',
+    copilot_setup_step_4_desc: '設定完成並存檔後，請<strong>退出目前的 Copilot CLI 聊天會話，並重新進入</strong>以套用全新設定。',
+    copilot_setup_step_5_desc: '進入 Copilot CLI 會話聊天後，畫面底部應該會看到由本專案腳本收集並精緻渲染出的狀態列，如：',
+    codex_title: 'Codex CLI Token Insights 看板',
+    codex_header_description: '本地監控與分析您的 Codex CLI 的 Token 消耗與會話詳細數據',
+    codex_pricing_sheet_title: '💰 Codex 費用標準表',
+    codex_setup_modal_title: '⚙️ Codex CLI 前置說明與使用指南',
+    codex_empty_title: '歡迎使用 Codex CLI Token Insights Dashboard',
+    codex_empty_desc: '我們偵測到您的 <code>~/.codex</code> 本地目錄中目前沒有使用數據。這是因為您尚未啟用 Codex CLI。請點選下方按鈕查看啟用教學！',
+  },
+  'en': {
+    title: 'Token Usage Insights',
+    select_assistant: 'Select Agent',
+    assistant_all: '🌟 All Agents (Overview)',
+    assistant_antigravity: '🤖 Antigravity CLI',
+    assistant_copilot: '🐱 GitHub Copilot CLI',
+    assistant_codex: '⚡ Codex CLI',
+    col_assistant: 'Agent',
+    tab_daily: '📊 Daily Real-time',
+    tab_monthly: '📅 Monthly Summary',
+    select_date: 'Select Date',
+    today_btn: 'Today',
+    this_month_btn: 'This Month',
+    prev_month_btn: 'Last Month',
+    next_month_btn: 'Next Month',
+    detected_new_day: 'Cross-day detected, auto switching to: ',
+    select_month: 'Select Month',
+    loading: 'Loading...',
+    no_logs: 'No usage logs found',
+    no_month_logs: 'No monthly logs found',
+    reload_data: 'Reload Data',
+    live_refresh: 'Live Auto-refresh',
+    refresh_interval: 'Refresh Rate:',
+    seconds: 's',
+    status_preparing: 'Preparing...',
+    status_monitoring: 'Monitoring (refresh in {sec}s)',
+    status_failed: 'Update failed, waiting for next try...',
+    quick_stats_title: 'Daily Summary Metrics',
+    stat_total_sessions: 'Total Sessions',
+    stat_total_tokens: 'Total Tokens',
+    stat_cache_read: 'Cache Read: {val}',
+    stat_api_duration: 'API Duration',
+    stat_total_requests: 'Total Requests',
+    select_date_prompt: 'Please select a date to load data',
+    header_description: 'Monitor and analyze token usage and session details of your local terminal AI Agents in one place',
+    setup_guide: 'Setup Guide',
+    setup_guide_title: 'Setup Guide & Activation Tutorial',
+    theme_toggle_title_dark: 'Switch to Light Theme',
+    theme_toggle_title_light: 'Switch to Dark Theme',
+    total_tokens_label: 'Total Tokens',
+    input_tokens_label: 'Input Tokens',
+    output_tokens_label: 'Output Tokens',
+    reasoning_tokens_label: 'Reasoning Tokens',
+    cache_read_label: 'Cache Read',
+    ratio_label: 'Ratio',
+    total_label: 'Total',
+    chart_daily_title: 'Token Consumption Trend & Cache Status',
+    chart_token_label: 'Session Total Tokens',
+    chart_cache_label: 'Cache Read Tokens',
+    chart_turn_label: 'Session Turns',
+    chart_monthly_title: 'Daily Token & Session Trend of the Month',
+    chart_monthly_token_label: 'Monthly Total Tokens',
+    chart_monthly_session_label: 'Daily Sessions',
+    sessions_table_title: 'Daily Session List (Sessions)',
+    col_session: 'Session',
+    col_model: 'Model',
+    col_turns: 'Turns',
+    col_input: 'Input',
+    col_output: 'Output',
+    col_reasoning: 'Reasoning',
+    col_cache: 'Cache',
+    col_total: 'Total',
+    col_cost: 'Est. Cost',
+    col_duration: 'Duration',
+    col_time: 'Time',
+    estimated_cost_label: 'Est. Cost',
+    stat_cost_desc: 'Estimated based on pricing.csv',
+    btn_pricing_sheet: 'Pricing Rates',
+    pricing_sheet_title: '💰 Google Antigravity Pricing Rates',
+    pricing_intro: 'This cost is locally estimated based on rates loaded from <code>pricing.csv</code>. Rates are in USD per 1M Tokens (per million tokens):',
+    placeholder_select_date: 'Please select a date on the left',
+    placeholder_no_sessions: 'No session records found today',
+    monthly_tokens_label: 'Monthly Total Tokens',
+    monthly_input_label: 'Monthly Input Tokens',
+    monthly_output_label: 'Monthly Output Tokens',
+    monthly_sessions_label: 'Monthly Total Sessions',
+    monthly_requests_count: 'Total Requests: {count}',
+    monthly_projects_title: '🏢 Most Active Project Directories',
+    monthly_models_title: '🤖 Model Usage Breakdown',
+    col_rank: 'Rank',
+    col_project_cwd: 'Working Directory (CWD)',
+    col_sessions_count: 'Sessions',
+    placeholder_no_projects: 'No project activity recorded this month',
+    placeholder_no_models: 'No model usage data this month',
+    drawer_category: 'Session Reconstruction',
+    drawer_cwd: 'Working CWD',
+    drawer_repo: 'Repository',
+    drawer_branch: 'Git Branch',
+    drawer_model: 'Model',
+    drawer_input: 'Input',
+    drawer_output: 'Output',
+    drawer_reasoning: 'Reasoning',
+    drawer_cache: 'Cache',
+    drawer_compaction: 'Compactions',
+    drawer_total: 'Total',
+    drawer_loading: 'Reconstructing session timeline...',
+    drawer_load_failed_cleaned: 'Failed to load session events. The events.jsonl file might have been cleaned up by the system.',
+    drawer_load_failed: 'Failed to load timeline.',
+    drawer_no_events: 'No event logs found in this session',
+    drawer_no_events_yet: '💬 This session has not started chatting yet. events.jsonl has not been generated.',
+    sender_user: '👤 USER',
+    sender_agent: '🤖 ANTIGRAVITY AGENT',
+    thinking_tools: 'Thinking: Calling tool commands...',
+    copy_markdown: 'Copy Markdown',
+    copy_markdown_title: 'Copy raw Markdown response',
+    expand_reply: 'Expand Reply',
+    collapse_reply: 'Collapse Reply',
+    no_returned_data: 'No returned data',
+    data_truncated: '... [Data too long, truncated by the dashboard] ...',
+    tool_arguments: 'Arguments',
+    tool_result: 'Result',
+    session_started: 'Session Started',
+    session_ended: 'Session Ended',
+    session_compaction: 'Session Compaction Completed',
+    reload_success: 'Data refreshed successfully',
+    reload_failed: 'Failed to refresh data',
+    monthly_reload_success: 'Monthly data refreshed successfully',
+    live_refresh_enabled: 'Live auto-refresh enabled',
+    live_refresh_disabled: 'Live auto-refresh disabled',
+    live_refresh_failed: 'Live refresh failed:',
+    date_not_found: 'Data for the specified date not found',
+    load_failed: 'Failed to read data',
+    server_conn_failed: 'Unable to connect to server API',
+    month_not_found: 'Data for the specified month not found',
+    monthly_load_failed: 'Failed to load monthly aggregated data',
+    copy_success: '✅ Copied!',
+    copy_failed: 'Failed to copy, please select and copy manually',
+    setup_modal_title: '⚙️ Google Antigravity CLI Configuration & Setup Guide',
+    setup_modal_intro: 'This dashboard parses and visualizes Token data collected from the Google Antigravity CLI <strong>Status Line</strong>. We use <code>~/.antigravity/statusline-token.sh</code> to record daily usage statistics and sessions.',
+    setup_step_1: '<span>1️⃣</span> 1. Set Script Execution Permissions',
+    setup_step_1_desc: 'First, create the configuration directory, copy the collection script to your home directory under <code>.antigravity</code>, and grant execution permissions:',
+    btn_copy_cmd: '📋 Copy Command',
+    setup_step_2: '<span>2️⃣</span> 2. Edit Configuration File',
+    setup_step_2_desc: 'Edit or create the Antigravity CLI configuration file <code>~/.gemini/antigravity-cli/settings.json</code>:',
+    setup_step_2_desc2: 'Add the following <code>statusLine</code> configuration into the file:',
+    btn_copy_config: '📋 Copy Config JSON',
+    setup_home_hint_title: '💡 Home Directory Hint:',
+    setup_home_hint_desc: 'If your <code>$HOME</code> directory is not <code id="lbl-detected-home">/home/&lt;username&gt;</code>, run <code style="background: rgba(255,255,255,0.15)">echo $HOME</code> in terminal to check it, and modify the <code>command</code> field accordingly.',
+    setup_step_3: '<span>3️⃣</span> 3. Merging with Existing Settings (Do Not Overwrite)',
+    setup_step_3_desc: 'If your <code>settings.json</code> already has other configurations, <strong>do not overwrite the whole file</strong>. Simply merge the <code>statusLine</code> property into it, for example:',
+    btn_copy_merge_example: '📋 Copy Merge Example',
+    setup_step_4: '<span>4️⃣</span> 4. Restart Antigravity CLI',
+    setup_step_4_desc: 'After saving the file, please <strong>exit your current Antigravity CLI session and re-enter</strong> to apply the new settings.',
+    setup_step_5: '<span>5️⃣</span> 5. Verify the Installation',
+    setup_step_5_desc: 'After entering the Antigravity CLI session, you should see a beautifully rendered status line generated by this project script at the bottom:',
+    setup_troubleshooting: '⚠️ Troubleshooting:',
+    setup_troubleshoot_a: '🔍 <strong>A. If the status line doesn\'t appear, test if the script runs standalone:</strong>',
+    setup_troubleshoot_b: '🔍 <strong>B. Please verify if settings.json is a valid JSON format:</strong>',
+    empty_title: 'Welcome to Google Antigravity CLI Token Insights Dashboard',
+    empty_desc: 'We detected that there is currently no usage data in your local <code>~/.antigravity</code> directory. This is because you haven\'t enabled the Google Antigravity CLI Status Line or deployed the data collection script. Please click the button below to view the setup guide!',
+    no_agent_selected_title: 'Please select at least one Agent',
+    no_agent_selected_desc: 'You have not selected any Agent type. Please select at least one Agent (e.g., Antigravity CLI, GitHub Copilot CLI, Codex CLI) on the left sidebar to display data.',
+    btn_empty_setup: '⚙️ View Setup Guide',
+    btn_empty_refresh: '🔄 Reload and Check',
+    usage_report: 'Usage Report: ',
+    loading_prefix: 'Loading: ',
+    loading_month_prefix: 'Loading Monthly Data: ',
+    monthly_report: 'Monthly Report: ',
+    cache_prefix: 'Cache: ',
+    sync_db: 'Sync Data',
+    sync_db_title: 'Sync local logs to SQLite database now',
+    sync_db_loading: 'Syncing log files to database...',
+    sync_db_success: 'Database synced successfully!',
+    sync_db_failed: 'Sync failed: ',
+    monthly_daily_summary_title: '📅 Daily Summary of the Month',
+    col_date: 'Date',
+    placeholder_no_daily_summary: 'No daily summary data this month',
+    no_data_for_date: 'No Data for This Agent on This Date',
+    no_data_for_date_desc: '{agent} has no usage records on {date}. Try selecting a different date or switching to another Agent.',
+    antigravity_title: 'Google Antigravity CLI Token Insights Dashboard',
+    antigravity_header_description: 'Monitor daily tokens and session details of Google Antigravity CLI locally',
+    antigravity_pricing_sheet_title: '💰 Google Antigravity Pricing Rates',
+    antigravity_setup_modal_title: '⚙️ Google Antigravity CLI Configuration & Setup Guide',
+    antigravity_empty_title: 'Welcome to Google Antigravity CLI Token Insights Dashboard',
+    antigravity_empty_desc: 'We detected that there is currently no usage data in your local <code>~/.antigravity</code> directory. This is because you haven\'t enabled the Google Antigravity CLI Status Line or deployed the data collection script. Please click the button below to view the setup guide!',
+    copilot_title: 'GitHub Copilot CLI Token Insights Dashboard',
+    copilot_header_description: 'Monitor daily tokens and session details of GitHub Copilot CLI locally',
+    copilot_pricing_sheet_title: '💰 GitHub Copilot Pricing Rates',
+    copilot_setup_modal_title: '⚙️ GitHub Copilot CLI Configuration & Setup Guide',
+    copilot_empty_title: 'Welcome to GitHub Copilot CLI Token Insights Dashboard',
+    copilot_empty_desc: 'We detected that there is currently no usage data in your local <code>~/.copilot</code> directory. This is because you haven\'t enabled the GitHub Copilot CLI Status Line or deployed the data collection script. Please click the button below to view the setup guide!',
+    copilot_setup_modal_intro: 'This dashboard parses and visualizes Token data collected from the GitHub Copilot CLI <strong>Status Line</strong>. We use <code>~/.copilot/statusline-token.sh</code> to record daily usage statistics and sessions.',
+    copilot_setup_step_1_desc: 'First, create the configuration directory, copy the collection script to your home directory under <code>.copilot</code>, and grant execution permissions:',
+    copilot_setup_step_2_desc: 'Edit or create the Copilot CLI configuration file <code>~/.copilot/settings.json</code>:',
+    copilot_setup_step_4: '<span>4️⃣</span> 4. Restart Copilot CLI',
+    copilot_setup_step_4_desc: 'After saving the file, please <strong>exit your current Copilot CLI session and re-enter</strong> to apply the new settings.',
+    copilot_setup_step_5_desc: 'After entering the Copilot CLI session, you should see a beautifully rendered status line generated by this project script at the bottom:',
+    codex_title: 'Codex CLI Token Insights Dashboard',
+    codex_header_description: 'Monitor daily tokens and session details of Codex CLI locally',
+    codex_pricing_sheet_title: '💰 Codex Pricing Rates',
+    codex_setup_modal_title: '⚙️ Codex CLI Guide & User Instructions',
+    codex_empty_title: 'Welcome to Codex CLI Token Insights Dashboard',
+    codex_empty_desc: 'We detected that there is currently no usage data in your local <code>~/.codex</code> directory. This is because you haven\'t used Codex CLI yet. Please click the button below to view the setup guide!',
+  }
+};
+
+function t(key) {
+  const isSingle = ['antigravity', 'copilot', 'codex'].includes(currentAssistant);
+  if (isSingle) {
+    const prefix = currentAssistant + '_';
+    return i18n[currentLang][prefix + key] || i18n[currentLang][key] || i18n['zh-TW'][prefix + key] || i18n['zh-TW'][key] || key;
+  }
+  return i18n[currentLang][key] || i18n['zh-TW'][key] || key;
+}
+
+function updateLanguageUI() {
+  document.title = t('title');
+
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    el.innerHTML = t(key);
+  });
+
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.getAttribute('data-i18n-title');
+    el.title = t(key);
+  });
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    el.placeholder = t(key);
+  });
+
+  // Specific dynamic text updates
+  const langSelect = document.getElementById('lang-select');
+  if (langSelect) langSelect.value = currentLang;
+
+  const themeBtn = document.getElementById('theme-toggle-btn');
+  if (themeBtn) {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    themeBtn.title = currentTheme === 'dark' ? t('theme_toggle_title_dark') : t('theme_toggle_title_light');
+  }
+
+  // Update dynamic placeholders/empty state if they are currently displayed
+  const emptyContainer = document.getElementById('empty-state-container');
+  if (emptyContainer && !emptyContainer.classList.contains('hidden')) {
+    toggleEmptyState(true);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initApp();
+});
+
+// =========================================================================
+// App Initialization & Event Listeners
+// =========================================================================
+function initApp() {
+  const dateSelect = document.getElementById('date-select');
+  const monthSelect = document.getElementById('month-select');
+  const closeDrawerBtn = document.getElementById('close-drawer-btn');
+  const drawerOverlay = document.getElementById('timeline-drawer');
+
+  // Tab Buttons
+  const tabBtnDaily = document.getElementById('tab-btn-daily');
+  const tabBtnMonthly = document.getElementById('tab-btn-monthly');
+
+  // Live Controls
+  const liveToggle = document.getElementById('live-toggle');
+  const liveInterval = document.getElementById('live-interval');
+
+  // 監聽助理切換 (單選 Badge)
+  const badgeButtons = document.querySelectorAll('.assistant-badge-btn');
+  if (badgeButtons.length > 0) {
+    // 初始化：找到第一個符合 currentAssistant 的按鈕，或預設第一個
+    badgeButtons.forEach(btn => {
+      const val = btn.getAttribute('data-value');
+      if (val === currentAssistant) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+    // 若沒有任何 active（例如 currentAssistant === 'all' 或 'none'），預設第一個
+    if (!document.querySelector('.assistant-badge-btn.active')) {
+      badgeButtons[0].classList.add('active');
+      currentAssistant = badgeButtons[0].getAttribute('data-value');
+    }
+
+    badgeButtons.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        // 單選：先取消所有，再啟用此按鈕
+        badgeButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        currentAssistant = btn.getAttribute('data-value');
+        updateLanguageUI();
+        fetchPricingRules();
+
+        const colHeader = document.getElementById('col-assistant-header');
+        if (colHeader) {
+          colHeader.classList.add('hidden');
+        }
+
+        // 切換 agent 時保留目前日期，當日無資料則顯示提示
+        await fetchDates(null, true);
+        await fetchMonths();
+      });
+    });
+  }
+
+  // Language selector
+  const langSelect = document.getElementById('lang-select');
+  if (langSelect) {
+    langSelect.value = currentLang;
+    langSelect.addEventListener('change', (e) => {
+      currentLang = e.target.value;
+      localStorage.setItem('lang', currentLang);
+      updateLanguageUI();
+      
+      // Re-render currently active view
+      if (activeTab === 'daily' && currentUsageData) {
+        renderDashboard(currentUsageData);
+      } else if (activeTab === 'monthly' && currentMonthlyData) {
+        renderMonthlyDashboard(currentMonthlyData);
+      }
+    });
+  }
+
+  // 載入日期清單
+  fetchDates();
+  // 載入月份清單
+  fetchMonths();
+
+  // Initialize language UI translation
+  updateLanguageUI();
+
+  // Tab切換監聽
+  tabBtnDaily.addEventListener('click', () => switchTab('daily'));
+  tabBtnMonthly.addEventListener('click', () => switchTab('monthly'));
+
+  // 監聽日期切換
+  dateSelect.addEventListener('change', (e) => {
+    if (e.target.value) {
+      loadUsageData(e.target.value);
+    }
+  });
+
+  // 點擊整個輸入框時自動打開小日曆
+  dateSelect.addEventListener('click', (e) => {
+    if (typeof e.target.showPicker === 'function') {
+      try {
+        e.target.showPicker();
+      } catch (err) {
+        console.warn('showPicker not supported or blocked:', err);
+      }
+    }
+  });
+
+  // 快速切換前一天與後一天邏輯
+  const adjustDate = async (offset) => {
+    const currentDateVal = dateSelect.value;
+    if (!currentDateVal) return;
+    
+    const currentDate = new Date(currentDateVal);
+    if (isNaN(currentDate.getTime())) return;
+    
+    currentDate.setDate(currentDate.getDate() + offset);
+    const newDateStr = getLocalDateString(currentDate);
+    dateSelect.value = newDateStr;
+    await loadUsageData(newDateStr);
+  };
+
+  const btnPrevDay = document.getElementById('btn-prev-day');
+  if (btnPrevDay) {
+    btnPrevDay.addEventListener('click', () => adjustDate(-1));
+  }
+
+  const btnNextDay = document.getElementById('btn-next-day');
+  if (btnNextDay) {
+    btnNextDay.addEventListener('click', () => adjustDate(1));
+  }
+
+  // 監聽今日按鈕
+  const btnToday = document.getElementById('btn-today');
+  if (btnToday) {
+    btnToday.addEventListener('click', async () => {
+      const todayStr = getLocalDateString();
+      if (dateSelect) {
+        dateSelect.value = todayStr;
+      }
+      await loadUsageData(todayStr);
+      showNotification(`${t('today_btn') || '今日'} ${todayStr}`, 'success');
+    });
+  }
+
+  // 監聽月份切換
+  monthSelect.addEventListener('change', (e) => {
+    if (e.target.value) {
+      loadMonthlyData(e.target.value);
+    }
+  });
+
+  // 快速切換上個月與下個月邏輯
+  const adjustMonth = async (offset) => {
+    const currentMonthVal = monthSelect.value;
+    if (!currentMonthVal) return;
+    
+    const parts = currentMonthVal.split('-');
+    if (parts.length !== 2) return;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    
+    let targetMonth = month - 1 + offset;
+    let targetYear = year + Math.floor(targetMonth / 12);
+    targetMonth = (targetMonth % 12 + 12) % 12 + 1;
+    
+    const newMonthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+    
+    let exists = false;
+    for (let i = 0; i < monthSelect.options.length; i++) {
+      if (monthSelect.options[i].value === newMonthStr) {
+        exists = true;
+        break;
+      }
+    }
+    if (!exists) {
+      const opt = document.createElement('option');
+      opt.value = newMonthStr;
+      opt.textContent = newMonthStr;
+      let inserted = false;
+      for (let i = 0; i < monthSelect.options.length; i++) {
+        if (monthSelect.options[i].value < newMonthStr) {
+          monthSelect.insertBefore(opt, monthSelect.options[i]);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) {
+        monthSelect.appendChild(opt);
+      }
+    }
+    
+    monthSelect.value = newMonthStr;
+    await loadMonthlyData(newMonthStr);
+  };
+
+  const btnPrevMonth = document.getElementById('btn-prev-month');
+  if (btnPrevMonth) {
+    btnPrevMonth.addEventListener('click', () => adjustMonth(-1));
+  }
+
+  const btnNextMonth = document.getElementById('btn-next-month');
+  if (btnNextMonth) {
+    btnNextMonth.addEventListener('click', () => adjustMonth(1));
+  }
+
+  const btnThisMonth = document.getElementById('btn-this-month');
+  if (btnThisMonth) {
+    btnThisMonth.addEventListener('click', async () => {
+      const now = new Date();
+      const thisMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      let exists = false;
+      for (let i = 0; i < monthSelect.options.length; i++) {
+        if (monthSelect.options[i].value === thisMonthStr) {
+          exists = true;
+          break;
+        }
+      }
+      if (!exists) {
+        const opt = document.createElement('option');
+        opt.value = thisMonthStr;
+        opt.textContent = thisMonthStr;
+        let inserted = false;
+        for (let i = 0; i < monthSelect.options.length; i++) {
+          if (monthSelect.options[i].value < thisMonthStr) {
+            monthSelect.insertBefore(opt, monthSelect.options[i]);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted) {
+          monthSelect.appendChild(opt);
+        }
+      }
+      monthSelect.value = thisMonthStr;
+      await loadMonthlyData(thisMonthStr);
+      showNotification(`${t('this_month_btn') || '今月'} ${thisMonthStr}`, 'success');
+    });
+  }
+
+  // 監聽重新整理按鈕
+  const btnReloadDaily = document.getElementById('btn-reload-daily');
+  const btnReloadMonthly = document.getElementById('btn-reload-monthly');
+
+  if (btnReloadDaily) {
+    btnReloadDaily.addEventListener('click', async () => {
+      btnReloadDaily.classList.add('loading');
+      try {
+        await reloadDailyData();
+        showNotification(t('reload_success'), 'success');
+      } catch (err) {
+        console.error('Reload failed:', err);
+        showNotification(t('reload_failed'), 'error');
+      } finally {
+        btnReloadDaily.classList.remove('loading');
+      }
+    });
+  }
+
+  if (btnReloadMonthly) {
+    btnReloadMonthly.addEventListener('click', async () => {
+      btnReloadMonthly.classList.add('loading');
+      try {
+        await reloadMonthlyData();
+        showNotification(t('monthly_reload_success'), 'success');
+      } catch (err) {
+        console.error('Reload failed:', err);
+        showNotification(t('reload_failed'), 'error');
+      } finally {
+        btnReloadMonthly.classList.remove('loading');
+      }
+    });
+  }
+
+  // 監聽手動同步資料庫按鈕
+  const btnSyncDb = document.getElementById('btn-sync-db');
+  if (btnSyncDb) {
+    btnSyncDb.addEventListener('click', async () => {
+      btnSyncDb.classList.add('loading');
+      btnSyncDb.disabled = true;
+      showNotification(t('sync_db_loading'), 'info');
+      try {
+        const res = await fetch(`/api/${currentAssistant}/sync`);
+        if (res.ok) {
+          showNotification(t('sync_db_success'), 'success');
+          // 重新載入目前頁面的數據
+          if (activeTab === 'daily') {
+            await reloadDailyData();
+          } else {
+            await reloadMonthlyData();
+          }
+          // 同時重新整理可用的日期與月份清單
+          await fetchDates();
+          await fetchMonths();
+        } else {
+          let errMsg = res.statusText;
+          try {
+            const data = await res.json();
+            if (data && data.error) errMsg = data.error;
+          } catch (_) {}
+          showNotification(t('sync_db_failed') + errMsg, 'error');
+        }
+      } catch (err) {
+        console.error('Sync failed:', err);
+        showNotification(t('sync_db_failed') + err.message, 'error');
+      } finally {
+        btnSyncDb.classList.remove('loading');
+        btnSyncDb.disabled = false;
+      }
+    });
+  }
+
+  // 監聽 Live 重新整理切換
+  liveToggle.addEventListener('change', (e) => {
+    toggleLiveRefresh(e.target.checked);
+  });
+
+  // 監聽 Live 頻率變更
+  liveInterval.addEventListener('change', (e) => {
+    refreshInterval = parseInt(e.target.value, 10);
+    if (liveToggle.checked) {
+      // 重啟計時器
+      startLiveRefresh();
+    }
+  });
+
+  // 關閉抽屜彈窗
+  closeDrawerBtn.addEventListener('click', closeDrawer);
+  drawerOverlay.addEventListener('click', (e) => {
+    if (e.target === drawerOverlay) {
+      closeDrawer();
+    }
+  });
+
+  // 支援 ESC 鍵關閉抽屜
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeDrawer();
+    }
+  });
+
+  // Sidebar Toggle Button
+  const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+  const appContainer = document.querySelector('.app-container');
+  if (sidebarToggleBtn && appContainer) {
+    sidebarToggleBtn.addEventListener('click', () => {
+      appContainer.classList.toggle('sidebar-collapsed');
+    });
+
+    // Collapse by default on medium/small screens (<= 1024px)
+    if (window.innerWidth <= 1024) {
+      appContainer.classList.add('sidebar-collapsed');
+    }
+  }
+
+  // 初始化深淺色主題切換
+  initThemeToggle();
+
+  // 初始化表格欄位排序
+  initTableSorting();
+
+  // 初始化前置設定教學 Modal 與事件
+  initSetupGuide();
+
+  // 載入費用標準規則
+  fetchPricingRules();
+  // 初始化費用標準 Modal 與事件
+  initPricingModal();
+}
+
+// =========================================================================
+// Tab 切換邏輯
+// =========================================================================
+function switchTab(tab) {
+  if (activeTab === tab) return;
+  activeTab = tab;
+
+  const tabBtnDaily = document.getElementById('tab-btn-daily');
+  const tabBtnMonthly = document.getElementById('tab-btn-monthly');
+  const dailySelector = document.getElementById('daily-selector-section');
+  const monthlySelector = document.getElementById('monthly-selector-section');
+  const quickStats = document.getElementById('quick-stats-section');
+  const dailyView = document.getElementById('daily-view-container');
+  const monthlyView = document.getElementById('monthly-view-container');
+
+  if (tab === 'daily') {
+    tabBtnDaily.classList.add('active');
+    tabBtnMonthly.classList.remove('active');
+    dailySelector.classList.remove('hidden');
+    monthlySelector.classList.add('hidden');
+    quickStats.classList.remove('hidden');
+    
+    if (isEmptyState) {
+      dailyView.classList.add('hidden');
+      monthlyView.classList.add('hidden');
+    } else {
+      dailyView.classList.remove('hidden');
+      monthlyView.classList.add('hidden');
+    }
+
+    // 載入當前日期的數據
+    const dateSelect = document.getElementById('date-select');
+    if (dateSelect.value) {
+      loadUsageData(dateSelect.value);
+    }
+  } else {
+    // 關閉即時自動刷新以節省資源
+    const liveToggle = document.getElementById('live-toggle');
+    if (liveToggle.checked) {
+      liveToggle.checked = false;
+      toggleLiveRefresh(false);
+    }
+
+    tabBtnDaily.classList.remove('active');
+    tabBtnMonthly.classList.add('active');
+    dailySelector.classList.add('hidden');
+    monthlySelector.classList.remove('hidden');
+    quickStats.classList.add('hidden');
+    
+    if (isEmptyState) {
+      dailyView.classList.add('hidden');
+      monthlyView.classList.add('hidden');
+    } else {
+      dailyView.classList.add('hidden');
+      monthlyView.classList.remove('hidden');
+    }
+
+    // 載入當前月份的數據
+    const monthSelect = document.getElementById('month-select');
+    if (monthSelect.value) {
+      loadMonthlyData(monthSelect.value);
+    } else {
+      fetchMonths();
+    }
+  }
+}
+
+// =========================================================================
+// 即時監控自動重新整理 (Live Auto-Refresh)
+// =========================================================================
+function toggleLiveRefresh(enabled) {
+  const panel = document.getElementById('live-settings-panel');
+  const dateSelect = document.getElementById('date-select');
+  const btnToday = document.getElementById('btn-today');
+  const btnPrevDay = document.getElementById('btn-prev-day');
+  const btnNextDay = document.getElementById('btn-next-day');
+
+  if (enabled) {
+    panel.style.display = 'block';
+    dateSelect.disabled = true; // 鎖定日期選擇
+    if (btnToday) btnToday.disabled = true; // 鎖定今日按鈕
+    if (btnPrevDay) btnPrevDay.disabled = true;
+    if (btnNextDay) btnNextDay.disabled = true;
+
+    // 自動切換到當天的日期 (以今天日期進行即時監控)
+    const todayStr = getLocalDateString();
+    dateSelect.value = todayStr;
+    loadUsageData(todayStr);
+
+    startLiveRefresh();
+    showNotification(t('live_refresh_enabled'), 'success');
+  } else {
+    panel.style.display = 'none';
+    dateSelect.disabled = false;
+    if (btnToday) btnToday.disabled = false;
+    if (btnPrevDay) btnPrevDay.disabled = false;
+    if (btnNextDay) btnNextDay.disabled = false;
+
+    stopLiveRefresh();
+    showNotification(t('live_refresh_disabled'), 'info');
+  }
+}
+
+function startLiveRefresh() {
+  stopLiveRefresh();
+
+  const intervalInput = document.getElementById('live-interval');
+  refreshInterval = parseInt(intervalInput.value, 10);
+
+  const statusText = document.getElementById('live-status-text');
+  const progressBar = document.getElementById('refresh-progress');
+  
+  progressBar.style.width = '0%';
+
+  let startTime = Date.now();
+  
+  // 100ms 進度條更新一次以確保極度順暢
+  liveProgressTimer = setInterval(() => {
+    let elapsed = Date.now() - startTime;
+    let percentage = Math.min((elapsed / refreshInterval) * 100, 100);
+    progressBar.style.width = `${percentage}%`;
+
+    let seconds = Math.max(Math.ceil((refreshInterval - elapsed) / 1000), 0);
+    statusText.textContent = t('status_monitoring').replace('{sec}', seconds);
+  }, 100);
+
+  // 實際刷新 API 的定時器
+  liveRefreshTimer = setInterval(async () => {
+    // 重設進度條與時間
+    startTime = Date.now();
+    progressBar.style.width = '0%';
+
+    // 重新載入最新資料
+    await refreshLiveData();
+  }, refreshInterval);
+}
+
+function stopLiveRefresh() {
+  if (liveRefreshTimer) {
+    clearInterval(liveRefreshTimer);
+    liveRefreshTimer = null;
+  }
+  if (liveProgressTimer) {
+    clearInterval(liveProgressTimer);
+    liveProgressTimer = null;
+  }
+  const progressBar = document.getElementById('refresh-progress');
+  if (progressBar) progressBar.style.width = '0%';
+}
+
+async function refreshLiveData() {
+  try {
+    const res = await fetch(`/api/${currentAssistant}/dates`);
+    const data = await res.json();
+    availableDates = data.dates || [];
+    
+    const dateSelect = document.getElementById('date-select');
+    const todayStr = getLocalDateString();
+    
+    // 更新日曆的最小與最大限制
+    if (availableDates.length > 0) {
+      dateSelect.min = availableDates[availableDates.length - 1];
+    }
+    dateSelect.max = todayStr;
+
+    // 即時自動刷新跨日支援：若目前時間已進入新的一天且與當前選擇不同，自動切換
+    if (dateSelect.value !== todayStr) {
+      console.log(`即時監控跨日切換: ${dateSelect.value} -> ${todayStr}`);
+      dateSelect.value = todayStr;
+      showNotification(`${t('detected_new_day') || '已跨日，自動切換至新的一天：'}${todayStr}`, 'info');
+    }
+
+    // 載入所選日期 (即新的 todayStr) 數據
+    await loadUsageData(dateSelect.value);
+  } catch (err) {
+    console.error('即時刷新失敗:', err);
+    const statusText = document.getElementById('live-status-text');
+    if (statusText) statusText.textContent = t('status_failed');
+  }
+}
+
+// =========================================================================
+// API 呼叫: 載入日期清單
+// =========================================================================
+async function fetchDates(selectedDate = null, keepDate = false) {
+  try {
+    const res = await fetch(`/api/${currentAssistant}/dates`);
+    const data = await res.json();
+    
+    const dateSelect = document.getElementById('date-select');
+    availableDates = data.dates || [];
+
+    if (availableDates.length === 0 && !keepDate) {
+      toggleEmptyState(true);
+      return;
+    }
+
+    // 設定日曆最小與最大值
+    const oldestDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : null;
+    const newestDate = availableDates.length > 0 ? availableDates[0] : null;
+    const todayStr = getLocalDateString();
+    
+    if (oldestDate) dateSelect.min = oldestDate;
+    dateSelect.max = todayStr;
+
+    let dateToLoad;
+    if (keepDate) {
+      // 切換 agent：保留目前日期，不自動跳轉
+      dateToLoad = dateSelect.value || todayStr;
+    } else {
+      dateToLoad = selectedDate || dateSelect.value;
+      if (!dateToLoad || !availableDates.includes(dateToLoad)) {
+        // 若有啟用即時刷新，預設為今日；否則預設為最新有日誌的日期
+        const liveToggle = document.getElementById('live-toggle');
+        if (liveToggle && liveToggle.checked) {
+          dateToLoad = todayStr;
+        } else {
+          dateToLoad = newestDate || todayStr;
+        }
+      }
+      dateSelect.value = dateToLoad;
+      toggleEmptyState(false);
+    }
+
+    // 載入所選日期的數據（keepDate 時即使不在清單也直接請求，讓後端回 404）
+    // 若目前在 monthly tab，不呼叫 loadUsageData（避免 showNoDataForDate 蓋掉月報畫面）
+    if (!keepDate || activeTab === 'daily') {
+      await loadUsageData(dateToLoad);
+    }
+
+  } catch (err) {
+    console.error('獲取日期清單失敗:', err);
+    showNotification(t('server_conn_failed'), 'error');
+  }
+}
+
+async function reloadDailyData() {
+  const dateSelect = document.getElementById('date-select');
+  const selectedDate = dateSelect.value;
+  await fetchDates(selectedDate);
+}
+
+// =========================================================================
+// API 呼叫: 載入當日使用量數據
+// =========================================================================
+async function loadUsageData(date) {
+  if (!date || date === 'undefined' || date === 'null') {
+    return;
+  }
+  try {
+    // 顯示加載動畫 (可在此擴展)
+    document.getElementById('current-date-title').innerHTML = `<span class="title-icon">⌛</span> <span class="title-text">${t('loading_prefix')}${date}...</span>`;
+
+    const res = await fetch(`/api/${currentAssistant}/usage/${date}`);
+    if (res.status === 404) {
+      // 顯示「此 Agent 當日無資料」提示畫面，不改變日期
+      showNoDataForDate(date);
+      return;
+    }
+    
+    const data = await res.json();
+    toggleEmptyState(false);
+    renderDashboard(data);
+
+  } catch (err) {
+    console.error('載入使用量失敗:', err);
+    showNotification(t('load_failed'), 'error');
+  }
+}
+
+// 顯示「此 Agent 於當日無資料」的提示畫面
+function showNoDataForDate(date) {
+  const agentNames = {
+    antigravity: '🤖 Antigravity CLI',
+    copilot: '🐱 GitHub Copilot CLI',
+    codex: '⚡ Codex CLI',
+  };
+  const agentLabel = agentNames[currentAssistant] || currentAssistant;
+  const desc = t('no_data_for_date_desc')
+    .replace('{agent}', agentLabel)
+    .replace('{date}', date);
+
+  const emptyContainer = document.getElementById('empty-state-container');
+  const dailyView = document.getElementById('daily-view-container');
+  const monthlyView = document.getElementById('monthly-view-container');
+
+  if (emptyContainer) {
+    emptyContainer.classList.remove('hidden');
+    emptyContainer.innerHTML = `
+      <div class="welcome-setup-card no-agent-card">
+        <div class="card-icon">📭</div>
+        <h2>${t('no_data_for_date')}</h2>
+        <p>${desc}</p>
+      </div>
+    `;
+  }
+  if (dailyView) dailyView.classList.add('hidden');
+  if (monthlyView) monthlyView.classList.add('hidden');
+
+  // 更新標題
+  const titleEl = document.getElementById('current-date-title');
+  if (titleEl) {
+    titleEl.innerHTML = `<span class="title-icon">📭</span> <span class="title-text">${agentLabel} · ${date}</span>`;
+  }
+}
+
+// Helpers to render metrics values (handling agent breakdown when multiple agents are active)
+function getActiveAgents() {
+  const activeAgents = [];
+  document.querySelectorAll('.assistant-badge-btn.active').forEach(b => {
+    activeAgents.push(b.getAttribute('data-value'));
+  });
+  return activeAgents;
+}
+
+function renderMetricValue(elementId, getValFn, formatFn, sessions, activeAgents) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  
+  const isMulti = activeAgents.length > 1;
+  if (!isMulti) {
+    const totalVal = sessions.reduce((sum, s) => sum + getValFn(s), 0);
+    el.innerHTML = formatFn(totalVal);
+  } else {
+    const agentData = {};
+    activeAgents.forEach(a => {
+      agentData[a] = 0;
+    });
+    sessions.forEach(s => {
+      if (agentData[s.assistant_type] !== undefined) {
+        agentData[s.assistant_type] += getValFn(s);
+      }
+    });
+    
+    let html = '<div class="stat-value-list">';
+    activeAgents.forEach(a => {
+      let emoji = '🤖';
+      let displayName = 'Antigravity CLI';
+      if (a === 'copilot') {
+        emoji = '🐱';
+        displayName = 'Copilot CLI';
+      } else if (a === 'codex') {
+        emoji = '⚡';
+        displayName = 'Codex CLI';
+      }
+      html += `
+        <div class="stat-value-item">
+          <span class="agent-name" title="${displayName}">${emoji}</span>
+          <span class="val">${formatFn(agentData[a])}</span>
+        </div>
+      `;
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  }
+}
+
+function renderMonthlyMetricValue(elementId, getValFn, formatFn, agentBreakdown, activeAgents) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  
+  const isMulti = activeAgents.length > 1;
+  if (!isMulti) {
+    // Falls back to showing single total summary value
+    // Rendered directly in renderMonthlyDashboard
+  } else {
+    let html = '<div class="stat-value-list">';
+    activeAgents.forEach(a => {
+      let emoji = '🤖';
+      let displayName = 'Antigravity CLI';
+      if (a === 'copilot') {
+        emoji = '🐱';
+        displayName = 'Copilot CLI';
+      } else if (a === 'codex') {
+        emoji = '⚡';
+        displayName = 'Codex CLI';
+      }
+      
+      const val = (agentBreakdown && agentBreakdown[a]) ? getValFn(agentBreakdown[a]) : 0;
+      html += `
+        <div class="stat-value-item">
+          <span class="agent-name" title="${displayName}">${emoji}</span>
+          <span class="val">${formatFn(val)}</span>
+        </div>
+      `;
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  }
+}
+
+// =========================================================================
+// 渲染主看板數據
+// =========================================================================
+function renderDashboard(data) {
+  currentUsageData = data;
+  const { date, summary, sessions } = data;
+
+  // 1. 更新標題與版本
+  document.getElementById('current-date-title').innerHTML = `<span class="title-icon">📅</span> <span class="title-text">${t('usage_report')}${date}</span>`;
+  const versionBadge = document.getElementById('antigravity-version-badge');
+  if (versionBadge) {
+    if (currentAssistant === 'all' || currentAssistant.includes(',')) {
+      versionBadge.textContent = 'Multi-Agent';
+    } else if (currentAssistant === 'antigravity') {
+      const firstVer = (data.raw_entries && data.raw_entries.length > 0) ? data.raw_entries[0].version : null;
+      versionBadge.textContent = `Antigravity CLI v${firstVer || '1.0.x'}`;
+    } else if (currentAssistant === 'copilot') {
+      versionBadge.textContent = 'Copilot CLI';
+    } else if (currentAssistant === 'codex') {
+      versionBadge.textContent = 'Codex CLI';
+    } else {
+      versionBadge.textContent = 'Agent --';
+    }
+  }
+
+  // 2. 更新側邊欄指標卡片
+  document.getElementById('mini-sessions').textContent = summary.total_sessions;
+  document.getElementById('mini-tokens').textContent = formatToken(summary.total_tokens);
+  document.getElementById('mini-cache').textContent = `${t('cache_read_label')}: ${formatToken(summary.total_cache_read_tokens)}`;
+  document.getElementById('mini-cost').textContent = formatCost(summary.total_cost_usd || 0);
+  document.getElementById('mini-duration').textContent = formatDuration(summary.total_duration_ms);
+  document.getElementById('mini-requests').textContent = summary.total_requests;
+
+  // 3. 更新主看板 Metric Cards
+  const activeAgents = getActiveAgents();
+  const isMulti = activeAgents.length > 1;
+
+  if (!isMulti) {
+    document.getElementById('stat-total-tokens').textContent = formatToken(summary.total_tokens);
+    document.getElementById('stat-input-tokens').textContent = formatToken(summary.total_input_tokens);
+    document.getElementById('stat-output-tokens').textContent = formatToken(summary.total_output_tokens);
+    document.getElementById('stat-reasoning-tokens').textContent = formatToken(summary.total_reasoning_tokens);
+    document.getElementById('stat-total-cost').textContent = formatCost(summary.total_cost_usd || 0);
+  } else {
+    renderMetricValue('stat-total-tokens', s => s.total_tokens, formatToken, sessions, activeAgents);
+    renderMetricValue('stat-input-tokens', s => s.total_input_tokens, formatToken, sessions, activeAgents);
+    renderMetricValue('stat-output-tokens', s => s.total_output_tokens, formatToken, sessions, activeAgents);
+    renderMetricValue('stat-reasoning-tokens', s => s.total_reasoning_tokens || 0, formatToken, sessions, activeAgents);
+    renderMetricValue('stat-total-cost', s => s.cost_usd || 0, formatCost, sessions, activeAgents);
+  }
+
+  const statCacheRead = document.getElementById('stat-cache-read');
+  const statInputPct = document.getElementById('stat-input-pct');
+  const statOutputPct = document.getElementById('stat-output-pct');
+  const statReasoningPct = document.getElementById('stat-reasoning-pct');
+
+  if (isMulti) {
+    if (statCacheRead) statCacheRead.classList.add('hidden');
+    if (statInputPct) statInputPct.classList.add('hidden');
+    if (statOutputPct) statOutputPct.classList.add('hidden');
+    if (statReasoningPct) statReasoningPct.classList.add('hidden');
+  } else {
+    if (statCacheRead) {
+      statCacheRead.classList.remove('hidden');
+      statCacheRead.textContent = `${t('cache_read_label')}: ${formatToken(summary.total_cache_read_tokens)} (${calculatePercentage(summary.total_cache_read_tokens, summary.total_tokens)})`;
+    }
+    if (statInputPct) {
+      statInputPct.classList.remove('hidden');
+      statInputPct.textContent = `${t('ratio_label')}: ${calculatePercentage(summary.total_input_tokens, summary.total_tokens)}`;
+    }
+    if (statOutputPct) {
+      statOutputPct.classList.remove('hidden');
+      statOutputPct.textContent = `${t('ratio_label')}: ${calculatePercentage(summary.total_output_tokens, summary.total_tokens)}`;
+    }
+    if (statReasoningPct) {
+      statReasoningPct.classList.remove('hidden');
+      statReasoningPct.textContent = `${t('ratio_label')}: ${calculatePercentage(summary.total_reasoning_tokens, summary.total_tokens)}`;
+    }
+  }
+
+  // 4. 繪製 Token 圖表
+  renderChart(sessions);
+
+  // 5. 渲染 Session 列表
+  currentSessions = [...sessions];
+  sortAndRenderSessionTable();
+}
+
+// =========================================================================
+// 渲染 Chart.js Token 使用趨勢圖
+// =========================================================================
+function renderChart(sessions) {
+  const canvas = document.getElementById('tokenChart');
+
+  // 只取前 15 個 Session 來畫，避免過於擁擠
+  const sortedSessions = [...sessions].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const displaySessions = sortedSessions.slice(-15);
+
+  currentChartSessions = displaySessions;
+
+  const labels = displaySessions.map((s, idx) => {
+    const timeStr = s.timestamp ? formatLocalTime(s.timestamp, false) : '';
+    return `${timeStr} (${s.session_name.substring(0, 10)}...)`;
+  });
+
+  const tokenData = displaySessions.map(s => s.total_tokens);
+  const cacheData = displaySessions.map(s => s.total_cache_read_tokens || 0);
+  const maxTurnData = displaySessions.map(s => s.max_turn_no);
+
+  // 若圖表已存在，則動態更新數據以達到平滑變動效果
+  if (tokenChartInstance) {
+    tokenChartInstance.data.labels = labels;
+    tokenChartInstance.data.datasets[0].label = t('chart_token_label');
+    tokenChartInstance.data.datasets[1].label = t('chart_cache_label');
+    tokenChartInstance.data.datasets[2].label = t('chart_turn_label');
+    tokenChartInstance.data.datasets[0].data = tokenData;
+    tokenChartInstance.data.datasets[1].data = cacheData;
+    tokenChartInstance.data.datasets[2].data = maxTurnData;
+    if (tokenChartInstance.options.scales && tokenChartInstance.options.scales.y && tokenChartInstance.options.scales.y.title) {
+      tokenChartInstance.options.scales.y.title.text = t('col_total');
+    }
+    if (tokenChartInstance.options.scales && tokenChartInstance.options.scales.y1 && tokenChartInstance.options.scales.y1.title) {
+      tokenChartInstance.options.scales.y1.title.text = t('col_turns');
+    }
+    tokenChartInstance.update();
+    return;
+  }
+
+  tokenChartInstance = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: t('chart_token_label'),
+          data: tokenData,
+          backgroundColor: 'rgba(0, 242, 254, 0.22)',
+          borderColor: '#00f2fe',
+          borderWidth: 1.5,
+          borderRadius: 6,
+          yAxisID: 'y',
+          grouped: false,
+          barPercentage: 0.8,
+        },
+        {
+          label: t('chart_cache_label'),
+          data: cacheData,
+          backgroundColor: 'rgba(129, 140, 248, 0.75)',
+          borderColor: '#818cf8',
+          borderWidth: 1.5,
+          borderRadius: 6,
+          yAxisID: 'y',
+          grouped: false,
+          barPercentage: 0.8,
+        },
+        {
+          label: t('chart_turn_label'),
+          data: maxTurnData,
+          type: 'line',
+          borderColor: '#9b51e0',
+          backgroundColor: 'rgba(155, 81, 224, 0.2)',
+          borderWidth: 2,
+          pointBackgroundColor: '#9b51e0',
+          pointRadius: 4,
+          tension: 0.3,
+          yAxisID: 'y1',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: (event, elements) => {
+        if (elements && elements.length > 0) {
+          const index = elements[0].index;
+          const session = currentChartSessions[index];
+          if (session) {
+            openSessionTimeline(session.session_id, session.session_name, session.total_tokens, session.total_cache_read_tokens);
+          }
+        }
+      },
+      onHover: (event, activeElements) => {
+        canvas.style.cursor = activeElements.length ? 'pointer' : 'default';
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#f3f4f6',
+            font: {
+              family: 'Outfit'
+            }
+          }
+        },
+        tooltip: {
+          padding: 12,
+          backgroundColor: 'rgba(15, 18, 29, 0.95)',
+          titleColor: '#00f2fe',
+          bodyColor: '#f3f4f6',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          borderWidth: 1,
+          callbacks: {
+            label: (context) => {
+              const label = context.dataset.label || '';
+              const value = context.parsed.y;
+              if (label.includes('Token')) {
+                return `${label}: ${formatToken(value)} (${formatNumber(value)})`;
+              }
+              return `${label}: ${formatNumber(value)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          stacked: false,
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          },
+          ticks: {
+            color: '#9ca3af',
+            font: {
+              size: 10
+            }
+          }
+        },
+        y: {
+          stacked: false,
+          type: 'linear',
+          position: 'left',
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          },
+          ticks: {
+            color: '#9ca3af',
+            callback: (value) => formatToken(value)
+          },
+          title: {
+            display: true,
+            text: t('col_total'),
+            color: '#f3f4f6'
+          }
+        },
+        y1: {
+          stacked: false,
+          type: 'linear',
+          position: 'right',
+          grid: {
+            drawOnChartArea: false, // 不畫右邊 y1 的格線避免混淆
+          },
+          ticks: {
+            color: '#9ca3af',
+            stepSize: 1
+          },
+          title: {
+            display: true,
+            text: t('col_turns')
+          }
+        }
+      }
+    }
+  });
+
+  // 根據當前主題更新圖表樣式
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+  updateChartsTheme(currentTheme);
+}
+
+// =========================================================================
+// 會話列表排序邏輯與事件監聽
+// =========================================================================
+function initTableSorting() {
+  const headers = document.querySelectorAll('.premium-table th.sortable');
+  headers.forEach(th => {
+    th.addEventListener('click', () => {
+      const column = th.getAttribute('data-sort');
+      const tableType = th.getAttribute('data-table');
+      
+      if (tableType === 'monthly') {
+        // 月度每日彙總表格排序
+        if (monthlyDailySortColumn === column) {
+          monthlyDailySortDirection = monthlyDailySortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          monthlyDailySortColumn = column;
+          monthlyDailySortDirection = 'desc'; // 預設降冪排序
+        }
+        sortAndRenderMonthlyDailyTable();
+      } else {
+        // 會話列表排序
+        if (currentSortColumn === column) {
+          // 切換排序方向
+          currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          currentSortColumn = column;
+          // 數值欄位預設由大到小排序，字串/時間欄位預設由小到大排序
+          const numericColumns = [
+            'max_turn_no', 
+            'total_input_tokens', 
+            'total_output_tokens', 
+            'total_cache_read_tokens', 
+            'total_tokens', 
+            'duration_ms'
+          ];
+          currentSortDirection = numericColumns.includes(column) ? 'desc' : 'asc';
+        }
+        sortAndRenderSessionTable();
+      }
+    });
+  });
+}
+
+function sortAndGetFlatSessions(sessions, sortCol, sortDir) {
+  const map = {};
+  sessions.forEach(s => {
+    map[s.session_id] = { ...s, children: [] };
+  });
+
+  const roots = [];
+  sessions.forEach(s => {
+    const item = map[s.session_id];
+    if (s.parent_session_id && map[s.parent_session_id]) {
+      map[s.parent_session_id].children.push(item);
+    } else {
+      roots.push(item);
+    }
+  });
+
+  const compare = (a, b) => {
+    let valA = a[sortCol];
+    let valB = b[sortCol];
+    if (valA === undefined || valA === null) valA = 0;
+    if (valB === undefined || valB === null) valB = 0;
+
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    }
+    return sortDir === 'asc' ? valA - valB : valB - valA;
+  };
+
+  // 排序 Root 節點
+  roots.sort(compare);
+
+  // 遞迴排序子節點
+  const sortTree = (node) => {
+    node.children.sort(compare);
+    node.children.forEach(sortTree);
+  };
+  roots.forEach(sortTree);
+
+  // 扁平化
+  const flat = [];
+  const traverse = (node, depth, parentName) => {
+    flat.push({
+      ...node,
+      depth,
+      isSubagent: depth > 0,
+      parentName
+    });
+    node.children.forEach(child => traverse(child, depth + 1, node.session_name));
+  };
+  roots.forEach(r => traverse(r, 0, null));
+
+  return flat;
+}
+
+function sortAndRenderSessionTable() {
+  if (!currentSessions || currentSessions.length === 0) {
+    renderSessionTable([]);
+    return;
+  }
+
+  const flatSessions = sortAndGetFlatSessions(currentSessions, currentSortColumn, currentSortDirection);
+  renderSessionTable(flatSessions);
+  updateSortHeadersUI();
+}
+
+function updateSortHeadersUI() {
+  const headers = document.querySelectorAll('.premium-table th.sortable:not([data-table="monthly"])');
+  headers.forEach(th => {
+    const column = th.getAttribute('data-sort');
+    const icon = th.querySelector('.sort-icon');
+    if (!icon) return;
+
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    
+    if (column === currentSortColumn) {
+      if (currentSortDirection === 'asc') {
+        th.classList.add('sorted-asc');
+        icon.innerHTML = '▴';
+      } else {
+        th.classList.add('sorted-desc');
+        icon.innerHTML = '▾';
+      }
+    } else {
+      icon.innerHTML = '<span class="sort-icon-placeholder">▴▾</span>';
+    }
+  });
+}
+
+// =========================================================================
+// 渲染 Session 列表 Table
+// =========================================================================
+function renderSessionTable(sessions) {
+  const tbody = document.getElementById('session-list-body');
+  document.getElementById('session-count').textContent = `${sessions.length} Sessions`;
+  tbody.innerHTML = '';
+
+  const colHeader = document.getElementById('col-assistant-header');
+  if (colHeader) {
+    if (currentAssistant === 'all' || currentAssistant.includes(',')) {
+      colHeader.classList.remove('hidden');
+    } else {
+      colHeader.classList.add('hidden');
+    }
+  }
+
+  if (sessions.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="12" class="placeholder-text">${t('placeholder_no_sessions')}</td></tr>`;
+    return;
+  }
+
+  // 建立快速查詢 Map 以供 Hover 高亮與樹狀結構查詢
+  const sessionsMap = {};
+  sessions.forEach(s => {
+    sessionsMap[s.session_id] = s;
+  });
+
+  function getRootParentId(session) {
+    let curr = session;
+    while (curr && curr.parent_session_id && sessionsMap[curr.parent_session_id]) {
+      curr = sessionsMap[curr.parent_session_id];
+    }
+    return curr ? curr.session_id : session.session_id;
+  }
+
+  sessions.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-session-id', s.session_id);
+    tr.setAttribute('data-parent-id', s.parent_session_id || '');
+
+    if (s.isSubagent) {
+      tr.classList.add('subagent-row');
+    }
+    
+    // 格式化時間
+    const timeFormatted = s.timestamp ? formatLocalTime(s.timestamp, true) : '-';
+
+    let assistantBadge = "";
+    if (s.assistant_type === "antigravity") {
+      assistantBadge = `<span class="badge" style="background: rgba(0, 242, 254, 0.15); color: #00f2fe; border: 1px solid rgba(0, 242, 254, 0.3);">🤖 Antigravity</span>`;
+    } else if (s.assistant_type === "copilot") {
+      assistantBadge = `<span class="badge" style="background: rgba(185, 43, 39, 0.15); color: #b92b27; border: 1px solid rgba(185, 43, 39, 0.3);">🐱 Copilot</span>`;
+    } else if (s.assistant_type === "codex") {
+      assistantBadge = `<span class="badge" style="background: rgba(79, 172, 254, 0.15); color: #4facfe; border: 1px solid rgba(79, 172, 254, 0.3);">⚡ Codex</span>`;
+    }
+
+    const astColumn = (currentAssistant === 'all' || currentAssistant.includes(',')) ? `<td>${assistantBadge}</td>` : '';
+
+    // 依據 depth 縮排會話名稱，並呈現└─ 符號與 subagent tag
+    let nameCellContent = '';
+    if (s.isSubagent) {
+      const paddingLeft = s.depth * 16;
+      const connectorLeft = (s.depth - 1) * 16 + 4;
+      const nickname = s.agent_nickname || '';
+      const role = s.agent_role || '';
+      nameCellContent = `
+        <div class="session-name-wrapper is-subagent" style="padding-left: ${paddingLeft}px;">
+          <span class="tree-connector" style="left: ${connectorLeft}px;">└─</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 3px;">
+            <span class="badge subagent-badge" title="Subagent of: ${escapeHtml(s.parentName || '')}">Subagent</span>
+            ${nickname ? `<span class="badge agent-nickname-badge" title="Agent Nickname: ${escapeHtml(nickname)}">${escapeHtml(nickname)}</span>` : ''}
+            ${role ? `<span class="badge agent-role-badge" title="Agent Role: ${escapeHtml(role)}">${escapeHtml(role)}</span>` : ''}
+          </div>
+          <span class="session-name-text" title="${escapeHtml(s.session_name)}">${escapeHtml(s.session_name)}</span>
+          <span class="session-id-sub">${s.session_id}</span>
+        </div>
+      `;
+    } else {
+      nameCellContent = `
+        <div class="session-name-wrapper">
+          <span class="session-name-text" title="${escapeHtml(s.session_name)}">${escapeHtml(s.session_name)}</span>
+          <span class="session-id-sub">${s.session_id}</span>
+        </div>
+      `;
+    }
+
+    tr.innerHTML = `
+      <td class="session-name-cell">
+        ${nameCellContent}
+      </td>
+      ${astColumn}
+      <td><span class="badge highlight">${escapeHtml(s.model)}</span></td>
+      <td><span class="badge">${s.max_turn_no}</span></td>
+      <td style="color: var(--text-secondary);">${formatToken(s.total_input_tokens || 0)}</td>
+      <td style="color: var(--text-secondary);">${formatToken(s.total_output_tokens || 0)}</td>
+      <td style="color: #a78bfa;">${formatToken(s.total_reasoning_tokens || 0)}</td>
+      <td style="color: #34d399;">${formatToken(s.total_cache_read_tokens || 0)}</td>
+      <td style="font-weight: 700; color: #fbbf24;">${formatToken(s.total_tokens)}</td>
+      <td style="font-weight: 700; color: var(--accent-cyan);">${formatCost(s.cost_usd || 0)}</td>
+      <td>${formatDuration(s.duration_ms)}</td>
+      <td style="color: var(--text-secondary);">${timeFormatted}</td>
+    `;
+
+    // 當點擊 Session 時，開啟對話詳細還原
+    tr.addEventListener('click', () => {
+      openSessionTimeline(
+        s.session_id,
+        s.session_name,
+        s.total_tokens,
+        s.total_cache_read_tokens,
+        s.total_input_tokens,
+        s.total_output_tokens,
+        s.total_reasoning_tokens,
+        s.cwd,
+        s.model,
+        s.assistant_type,
+        s.agent_nickname,
+        s.agent_role
+      );
+    });
+
+    // 群組 Hover 高亮
+    tr.addEventListener('mouseenter', () => {
+      const rootId = getRootParentId(s);
+      tbody.querySelectorAll('tr').forEach(row => {
+        const sid = row.getAttribute('data-session-id');
+        const pid = row.getAttribute('data-parent-id');
+        const rowSession = sessionsMap[sid];
+        
+        if (sid === rootId || pid === rootId || (rowSession && getRootParentId(rowSession) === rootId)) {
+          row.classList.add('family-highlight');
+        }
+      });
+    });
+
+    tr.addEventListener('mouseleave', () => {
+      tbody.querySelectorAll('tr').forEach(row => {
+        row.classList.remove('family-highlight');
+      });
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+// =========================================================================
+// API 呼叫: 載入並渲染特定 Session 對話時間軸 (Timeline)
+// =========================================================================
+async function openSessionTimeline(sessionId, sessionName, totalTokens, cacheReadTokens, inputTokens, outputTokens, reasoningTokens, cwd, model, assistantType, agentNickname, agentRole) {
+  const drawerOverlay = document.getElementById('timeline-drawer');
+  const timelineContainer = document.getElementById('timeline-items');
+
+  // 保存當前點擊之 Session 的正確統計與資訊以作為 Fallback
+  currentSessionTotalTokens = totalTokens || 0;
+  currentSessionCacheTokens = cacheReadTokens || 0;
+  currentSessionInputTokens = inputTokens || 0;
+  currentSessionOutputTokens = outputTokens || 0;
+  currentSessionReasoningTokens = reasoningTokens || 0;
+  currentSessionCwd = cwd || '';
+  currentSessionModel = model || '';
+
+  // 設定基礎抬頭 (截斷至 100 字元，滑鼠移過去可以看到全部)
+  let displayName = sessionName || '';
+  if (displayName.length > 100) {
+    displayName = displayName.substring(0, 100) + '...';
+  }
+  const nameEl = document.getElementById('drawer-session-name');
+  nameEl.textContent = displayName;
+  nameEl.title = sessionName || '';
+  document.getElementById('drawer-session-id').textContent = sessionId;
+
+  // 更新會話 Token & 基礎資訊（立即呈現在畫面上）
+  document.getElementById('meta-cwd').textContent = cwd || '-';
+  document.getElementById('meta-cwd').title = cwd || '';
+  document.getElementById('meta-model').textContent = model || '-';
+  document.getElementById('meta-tokens').textContent = formatToken(totalTokens || 0);
+  document.getElementById('meta-cache').textContent = formatToken(cacheReadTokens || 0);
+  document.getElementById('meta-compaction').textContent = '-';
+  document.getElementById('meta-input').textContent = formatToken(inputTokens || 0);
+  document.getElementById('meta-output').textContent = formatToken(outputTokens || 0);
+  document.getElementById('meta-reasoning').textContent = formatToken(reasoningTokens || 0);
+
+  const nicknameContainer = document.getElementById('drawer-meta-nickname-container');
+  const roleContainer = document.getElementById('drawer-meta-role-container');
+
+  if (agentNickname) {
+    document.getElementById('meta-nickname').textContent = agentNickname;
+    if (nicknameContainer) nicknameContainer.style.display = 'flex';
+  } else {
+    if (nicknameContainer) nicknameContainer.style.display = 'none';
+  }
+
+  if (agentRole) {
+    document.getElementById('meta-role').textContent = agentRole;
+    if (roleContainer) roleContainer.style.display = 'flex';
+  } else {
+    if (roleContainer) roleContainer.style.display = 'none';
+  }
+
+  // 顯示加載動畫
+  timelineContainer.innerHTML = `<div class="placeholder-text">${t('drawer_loading')}</div>`;
+  
+  // 顯示抽屜面板
+  drawerOverlay.classList.add('active');
+
+  try {
+    const resolvedAssistant = assistantType || currentAssistant;
+    const res = await fetch(`/api/${resolvedAssistant}/session/${sessionId}`);
+    if (res.status === 404) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.reason === 'no_events_yet') {
+        timelineContainer.innerHTML = `<div class="placeholder-text">${t('drawer_no_events_yet')}</div>`;
+      } else {
+        timelineContainer.innerHTML = `<div class="placeholder-text" style="color: var(--neon-red);">${t('drawer_load_failed_cleaned')}</div>`;
+      }
+      return;
+    }
+
+    const data = await res.json();
+    renderTimeline(data);
+
+  } catch (err) {
+    console.error('獲取會話細節失敗:', err);
+    timelineContainer.innerHTML = `<div class="placeholder-text" style="color: var(--neon-red);">${t('drawer_load_failed')}</div>`;
+  }
+}
+
+// 關閉抽屜
+function closeDrawer() {
+  document.getElementById('timeline-drawer').classList.remove('active');
+}
+
+// =========================================================================
+// 渲染 Session 詳細時間軸 (Timeline) 內容
+// =========================================================================
+function renderTimeline(data) {
+  const { metadata, timeline } = data;
+  const timelineContainer = document.getElementById('timeline-items');
+  timelineContainer.innerHTML = '';
+
+  // 取得最終使用的基礎資訊（API 回傳優先，沒有則 fallback 到列表正確欄位）
+  const finalCwd = metadata.cwd || currentSessionCwd || '-';
+  const finalModel = metadata.selected_model || currentSessionModel || '-';
+
+  // 更新 Metadata 區塊
+  document.getElementById('meta-cwd').textContent = finalCwd;
+  document.getElementById('meta-cwd').title = finalCwd;
+  document.getElementById('meta-branch').textContent = metadata.git_branch || '-';
+  document.getElementById('meta-model').textContent = finalModel;
+  document.getElementById('meta-repo').textContent = metadata.repository || '-';
+  document.getElementById('meta-repo').title = metadata.repository || '';
+
+  const nicknameContainer = document.getElementById('drawer-meta-nickname-container');
+  const roleContainer = document.getElementById('drawer-meta-role-container');
+
+  if (metadata.agent_nickname) {
+    document.getElementById('meta-nickname').textContent = metadata.agent_nickname;
+    if (nicknameContainer) nicknameContainer.style.display = 'flex';
+  } else {
+    if (nicknameContainer) nicknameContainer.style.display = 'none';
+  }
+
+  if (metadata.agent_role) {
+    document.getElementById('meta-role').textContent = metadata.agent_role;
+    if (roleContainer) roleContainer.style.display = 'flex';
+  } else {
+    if (roleContainer) roleContainer.style.display = 'none';
+  }
+
+  // 取得最終使用的 Token 數據（若單一 session events 日誌無 token stats，則使用列表正確累積數據）
+  const finalTotal = metadata.total_tokens || currentSessionTotalTokens || 0;
+  const finalCache = metadata.total_cache_read_tokens || currentSessionCacheTokens || 0;
+  const finalInput = metadata.total_input_tokens || currentSessionInputTokens || 0;
+  const finalOutput = metadata.total_output_tokens || currentSessionOutputTokens || 0;
+  const finalReasoning = metadata.total_reasoning_tokens || currentSessionReasoningTokens || 0;
+
+  document.getElementById('meta-tokens').textContent = formatToken(finalTotal);
+  document.getElementById('meta-cache').textContent = formatToken(finalCache);
+  document.getElementById('meta-compaction').textContent = metadata.compaction_count || 0;
+  document.getElementById('meta-input').textContent = formatToken(finalInput);
+  document.getElementById('meta-output').textContent = formatToken(finalOutput);
+  document.getElementById('meta-reasoning').textContent = formatToken(finalReasoning);
+
+  if (!timeline || timeline.length === 0) {
+    timelineContainer.innerHTML = `<div class="placeholder-text">${t('drawer_no_events')}</div>`;
+    return;
+  }
+
+  // 渲染時間軸物件，使用單一回合序號進行對齊
+  const hasUserPrompts = timeline.some(item => item.event_type === 'UserPrompt');
+  let currentTurnNo = 1;
+  let isFirstPrompt = true;
+
+  timeline.forEach(item => {
+    const timeStr = item.event_data.timestamp ? formatLocalTime(item.event_data.timestamp, true) : '';
+    const div = document.createElement('div');
+    div.className = 'timeline-item-wrapper';
+
+    switch (item.event_type) {
+      case 'UserPrompt': {
+        if (!isFirstPrompt) {
+          currentTurnNo++;
+        }
+        isFirstPrompt = false;
+        const prompt = item.event_data.prompt;
+        const turnNo = item.event_data.turn_no || currentTurnNo;
+        
+        let attachmentsHTML = '';
+        if (item.event_data.attachments && item.event_data.attachments.length > 0) {
+          attachmentsHTML = `<div class="bubble-attachments">`;
+          item.event_data.attachments.forEach(att => {
+            const path = att.filePath || att.path || '檔名未知';
+            const basename = path.split('/').pop();
+            const attType = att.type || 'file';
+            attachmentsHTML += `
+              <div class="attachment-badge" title="${escapeHtml(path)}">
+                📎 <strong>[${escapeHtml(attType)}]</strong> ${escapeHtml(basename)}
+              </div>
+            `;
+          });
+          attachmentsHTML += `</div>`;
+        }
+
+        div.innerHTML = `
+          <div class="timeline-dot"></div>
+          <div class="user-bubble">
+            <div class="bubble-header">
+              <div class="header-left">
+                <span class="turn-no-badge">#${turnNo}</span>
+                <span class="sender">${t('sender_user')}</span>
+                <button class="header-collapse-btn" style="display: none; margin-left: 8px;">
+                  ${t('collapse_reply')} ▲
+                </button>
+              </div>
+              <span class="time">${timeStr}</span>
+            </div>
+            <div class="prompt-content-wrapper">
+              <div class="prompt-text collapsed">${escapeHtml(prompt)}</div>
+              <button class="prompt-toggle-btn">
+                <span class="btn-text">${t('expand_reply')}</span> <span class="arrow">▼</span>
+              </button>
+            </div>
+            ${attachmentsHTML}
+          </div>
+        `;
+
+        // 綁定提問摺疊按鈕事件
+        const promptText = div.querySelector('.prompt-text');
+        const promptToggleBtn = div.querySelector('.prompt-toggle-btn');
+        const headerCollapseBtn = div.querySelector('.header-collapse-btn');
+
+        const toggleCollapse = (collapse) => {
+          if (collapse) {
+            promptText.classList.remove('expanded');
+            promptText.classList.add('collapsed');
+            promptToggleBtn.classList.remove('expanded');
+            promptToggleBtn.querySelector('.btn-text').textContent = t('expand_reply');
+            promptToggleBtn.querySelector('.arrow').textContent = '▼';
+            if (headerCollapseBtn) headerCollapseBtn.style.display = 'none';
+          } else {
+            promptText.classList.remove('collapsed');
+            promptText.classList.add('expanded');
+            promptToggleBtn.classList.add('expanded');
+            promptToggleBtn.querySelector('.btn-text').textContent = t('collapse_reply');
+            promptToggleBtn.querySelector('.arrow').textContent = '▲';
+            if (headerCollapseBtn) headerCollapseBtn.style.display = 'inline-flex';
+          }
+        };
+
+        if (promptText && promptToggleBtn) {
+          promptToggleBtn.addEventListener('click', () => {
+            const isCollapsed = promptText.classList.contains('collapsed');
+            toggleCollapse(!isCollapsed);
+          });
+        }
+
+        if (headerCollapseBtn) {
+          headerCollapseBtn.addEventListener('click', () => {
+            toggleCollapse(true); // Collapse it!
+            
+            // Smoothly scroll the container back into view
+            div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          });
+        }
+
+        break;
+      }
+
+      case 'AssistantReply': {
+        const replyMarkdown = item.event_data.reply;
+        const model = item.event_data.model;
+        const outTokens = item.event_data.output_tokens;
+        const inTokens = item.event_data.input_tokens;
+        const cacheReadTokens = item.event_data.cache_read_tokens;
+        const cacheWriteTokens = item.event_data.cache_write_tokens;
+        const reasoningTokens = item.event_data.reasoning_tokens;
+        const totalTokens = item.event_data.total_tokens || ((inTokens || outTokens) ? ((inTokens || 0) + (outTokens || 0)) : null);
+        const turnNo = item.event_data.turn_no || currentTurnNo;
+
+        // 如果 content 為空但有 Tool 呼叫，代表助理正在使用工具
+        let replyHtml = '';
+        const toolRequests = item.event_data.tool_requests || [];
+        const hasTools = toolRequests.length > 0;
+
+        if (!replyMarkdown && hasTools) {
+          replyHtml = `<span style="font-style: italic; color: var(--text-muted);">${t('thinking_tools')}</span>`;
+        } else {
+          replyHtml = marked.parse(replyMarkdown || '');
+        }
+
+        // 建立詳細 Token 資訊區塊 (in, out, reasoning, cache, total)
+        let tokenBadge = '';
+        if (totalTokens || inTokens || outTokens || cacheReadTokens || reasoningTokens) {
+          tokenBadge = `
+            <div class="turn-token-stats">
+              ${inTokens ? `<span class="token-badge input" title="輸入 Token (Input Tokens)">In: ${formatToken(inTokens)}</span>` : ''}
+              ${outTokens ? `<span class="token-badge output" title="輸出 Token (Output Tokens)">Out: ${formatToken(outTokens)}</span>` : ''}
+              ${reasoningTokens ? `<span class="token-badge reasoning" title="推理 Token (Reasoning Tokens)">Reasoning: ${formatToken(reasoningTokens)}</span>` : ''}
+              ${cacheReadTokens ? `<span class="token-badge cache" title="快取讀取 Token (Cache Read Tokens)">Cache: ${formatToken(cacheReadTokens)}</span>` : ''}
+              ${totalTokens ? `<span class="token-badge total" title="總 Token (Total Tokens)">Total: ${formatToken(totalTokens)}</span>` : ''}
+            </div>
+          `;
+        }
+
+        let copyButtonHtml = '';
+        if (replyMarkdown) {
+          copyButtonHtml = `
+            <button class="copy-markdown-btn" title="${t('copy_markdown_title')}">
+              📋 <span class="btn-text">${t('copy_markdown')}</span>
+            </button>
+          `;
+        }
+
+        div.innerHTML = `
+          <div class="timeline-dot"></div>
+          <div class="assistant-bubble">
+            <div class="bubble-header">
+              <div class="header-left">
+                <span class="turn-no-badge">#${turnNo}</span>
+                <span class="sender">${t('sender_agent')} (${escapeHtml(model)})</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                ${copyButtonHtml}
+                <span class="time">${timeStr}</span>
+              </div>
+            </div>
+            ${tokenBadge}
+            <div class="reply-content-wrapper">
+              <div class="reply-content collapsed">${replyHtml}</div>
+              <button class="reply-toggle-btn">
+                <span class="btn-text">${t('expand_reply')}</span> <span class="arrow">▼</span>
+              </button>
+            </div>
+          </div>
+        `;
+
+        // 綁定摺疊按鈕事件
+        const replyContent = div.querySelector('.reply-content');
+        const toggleBtn = div.querySelector('.reply-toggle-btn');
+        if (replyContent && toggleBtn) {
+          toggleBtn.addEventListener('click', () => {
+            const isCollapsed = replyContent.classList.contains('collapsed');
+            if (isCollapsed) {
+              replyContent.classList.remove('collapsed');
+              replyContent.classList.add('expanded');
+              toggleBtn.classList.add('expanded');
+              toggleBtn.querySelector('.btn-text').textContent = t('collapse_reply');
+              toggleBtn.querySelector('.arrow').textContent = '▲';
+            } else {
+              replyContent.classList.remove('expanded');
+              replyContent.classList.add('collapsed');
+              toggleBtn.classList.remove('expanded');
+              toggleBtn.querySelector('.btn-text').textContent = t('expand_reply');
+              toggleBtn.querySelector('.arrow').textContent = '▼';
+            }
+          });
+        }
+
+        // 如果此助理訊息沒有調用任何 Tool，且此會話沒有使用者提問事件，則將回合序號遞增 1
+        if (!hasTools && !hasUserPrompts) {
+          currentTurnNo++;
+        }
+
+        // 綁定複製 Markdown 事件
+        if (replyMarkdown) {
+          const copyBtn = div.querySelector('.copy-markdown-btn');
+          if (copyBtn) {
+            copyBtn.addEventListener('click', () => {
+              navigator.clipboard.writeText(replyMarkdown).then(() => {
+                const btnTextEl = copyBtn.querySelector('.btn-text');
+                const originalText = btnTextEl ? btnTextEl.textContent : 'Copy Markdown';
+                if (btnTextEl) btnTextEl.textContent = t('copy_success');
+                copyBtn.classList.add('copied');
+                
+                setTimeout(() => {
+                  if (btnTextEl) btnTextEl.textContent = originalText;
+                  copyBtn.classList.remove('copied');
+                }, 2000);
+              }).catch((err) => {
+                console.error('Failed to copy text: ', err);
+                showNotification(t('copy_failed'), 'error');
+              });
+            });
+          }
+        }
+
+        break;
+      }
+
+      case 'ToolStep': {
+        const toolName = item.event_data.tool_name;
+        const args = item.event_data.arguments;
+        const result = item.event_data.result;
+
+        const isSuccess = result !== null && result !== undefined;
+        const badgeClass = isSuccess ? 'badge success' : 'badge executing';
+        const badgeText = isSuccess ? 'Success' : 'Executing';
+
+        // 格式化 Args & Result 為 Pre 區塊
+        const argsStr = args ? JSON.stringify(args, null, 2) : '{}';
+        
+        let resultStr = t('no_returned_data');
+        if (result) {
+          if (result.textResultForLlm) {
+            resultStr = result.textResultForLlm;
+          } else if (result.content) {
+            resultStr = result.content;
+          } else {
+            resultStr = JSON.stringify(result, null, 2);
+          }
+        }
+
+        // 限制顯示長度，防止大日誌撐爆介面
+        const truncatedResultStr = resultStr.length > 1500 ? resultStr.substring(0, 1500) + '\n' + t('data_truncated') : resultStr;
+
+        div.innerHTML = `
+          <div class="timeline-dot"></div>
+          <div class="tool-step-bubble">
+            <div class="tool-header">
+              <div class="tool-info">
+                🔧 <span class="tool-name">${escapeHtml(toolName)}</span>
+                <span class="${badgeClass}">${badgeText}</span>
+              </div>
+              <span class="toggle-icon">▶</span>
+            </div>
+            <div class="tool-details">
+              <div class="detail-section">
+                <span>${t('tool_arguments')}</span>
+                <pre><code>${escapeHtml(argsStr)}</code></pre>
+              </div>
+              <div class="detail-section">
+                <span>${t('tool_result')}</span>
+                <pre><code>${escapeHtml(truncatedResultStr)}</code></pre>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // 綁定點擊展開事件
+        const header = div.querySelector('.tool-header');
+        header.addEventListener('click', () => {
+          const bubble = header.closest('.tool-step-bubble');
+          bubble.classList.toggle('expanded');
+          const icon = header.querySelector('.toggle-icon');
+          icon.textContent = bubble.classList.contains('expanded') ? '▼' : '▶';
+        });
+
+        break;
+      }
+
+      case 'SystemStatus': {
+        let message = item.event_data.message;
+        if (message === '會話開始 (Session Started)') {
+          message = t('session_started');
+        } else if (message === '會話結束 (Session Ended)') {
+          message = t('session_ended');
+        } else if (message === '會話狀態壓縮完成 (Session Compaction Completed)') {
+          message = t('session_compaction');
+        }
+
+        let emoji = '⚙️';
+        if (item.event_data.status_type === 'session_compaction') {
+          emoji = '🗜️';
+        }
+
+        div.innerHTML = `
+          <div class="timeline-dot"></div>
+          <div class="system-bubble">
+            <div class="system-badge">
+              ${emoji} ${escapeHtml(message)} <span class="time">${timeStr}</span>
+            </div>
+          </div>
+        `;
+        break;
+      }
+    }
+
+    timelineContainer.appendChild(div);
+  });
+}
+
+// =========================================================================
+// Helpers / Utilities
+// =========================================================================
+function formatNumber(num) {
+  if (num === null || num === undefined) return '-';
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function formatToken(num) {
+  if (num === null || num === undefined) return '-';
+  const n = Number(num);
+  if (isNaN(n)) return '-';
+  if (n >= 1000000) {
+    const val = n / 1000000;
+    return (val % 1 === 0 ? val : val.toFixed(1)) + 'm';
+  }
+  if (n >= 1000) {
+    const val = n / 1000;
+    return (val % 1 === 0 ? val : val.toFixed(1)) + 'k';
+  }
+  return n.toString();
+}
+
+function calculatePercentage(part, total) {
+  if (!total) return '0%';
+  return `${Math.round((part / total) * 100)}%`;
+}
+
+function formatDuration(ms) {
+  if (ms === null || ms === undefined || ms === 0) return '-';
+  if (ms < 1000) return `${ms}ms`;
+  
+  const totalSecs = ms / 1000;
+  if (totalSecs < 60) {
+    return `${totalSecs.toFixed(1)}s`;
+  }
+  
+  const totalSecsInt = Math.floor(totalSecs);
+  const hours = Math.floor(totalSecsInt / 3600);
+  const minutes = Math.floor((totalSecsInt % 3600) / 60);
+  const seconds = totalSecsInt % 60;
+  
+  const pad = (num) => String(num).padStart(2, '0');
+  
+  if (hours > 0) {
+    return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+  } else {
+    return `${minutes}:${pad(seconds)}`;
+  }
+}
+
+function formatLocalTime(isoString, includeSeconds = true) {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return '';
+    const pad = (num) => String(num).padStart(2, '0');
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    if (includeSeconds) {
+      const seconds = pad(date.getSeconds());
+      return `${hours}:${minutes}:${seconds}`;
+    }
+    return `${hours}:${minutes}`;
+  } catch (err) {
+    return '';
+  }
+}
+
+function escapeHtml(unsafe) {
+  if (!unsafe) return '';
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// =========================================================================
+// API 呼叫: 載入月份清單
+// =========================================================================
+async function fetchMonths(selectedMonth = null) {
+  try {
+    const res = await fetch(`/api/${currentAssistant}/months`);
+    const data = await res.json();
+    
+    const monthSelect = document.getElementById('month-select');
+    const targetMonth = selectedMonth || monthSelect.value;
+    
+    monthSelect.innerHTML = '';
+
+    if (!data.months || data.months.length === 0) {
+      monthSelect.innerHTML = `<option value="" disabled selected>${t('no_month_logs')}</option>`;
+      return;
+    }
+
+    let monthToLoad = data.months[0];
+    let hasSelected = false;
+
+    data.months.forEach((month) => {
+      const opt = document.createElement('option');
+      opt.value = month;
+      opt.textContent = month;
+      if (targetMonth && month === targetMonth) {
+        opt.selected = true;
+        monthToLoad = month;
+        hasSelected = true;
+      }
+      monthSelect.appendChild(opt);
+    });
+
+    if (!hasSelected) {
+      if (monthSelect.options.length > 0) {
+        monthSelect.options[0].selected = true;
+      }
+    }
+
+    if (activeTab === 'monthly') {
+      await loadMonthlyData(monthToLoad);
+    }
+
+  } catch (err) {
+    console.error('獲取月份清單失敗:', err);
+    showNotification(t('load_failed'), 'error');
+  }
+}
+
+async function reloadMonthlyData() {
+  const monthSelect = document.getElementById('month-select');
+  const selectedMonth = monthSelect.value;
+  await fetchMonths(selectedMonth);
+}
+
+// =========================================================================
+// API 呼叫: 載入單月彙整數據
+// =========================================================================
+async function loadMonthlyData(month) {
+  if (!month || month === 'undefined' || month === 'null') {
+    return;
+  }
+  try {
+    document.getElementById('current-date-title').innerHTML = `<span class="title-icon">⌛</span> <span class="title-text">${t('loading_month_prefix')}${month}...</span>`;
+
+    const res = await fetch(`/api/${currentAssistant}/monthly/${month}`);
+    if (res.status === 404) {
+      showNotification(t('month_not_found'), 'error');
+      return;
+    }
+    
+    const data = await res.json();
+    toggleEmptyState(false);
+    renderMonthlyDashboard(data);
+
+  } catch (err) {
+    console.error('載入月份彙整失敗:', err);
+    showNotification(t('monthly_load_failed'), 'error');
+  }
+}
+
+// =========================================================================
+// 渲染月報看板數據
+// =========================================================================
+function renderMonthlyDashboard(data) {
+  currentMonthlyData = data;
+  const { year_month, summary, daily_breakdown, models, projects, agent_breakdown } = data;
+
+  // 1. 更新標題與版本
+  document.getElementById('current-date-title').innerHTML = `<span class="title-icon">📅</span> <span class="title-text">${t('monthly_report')}${year_month}</span>`;
+  document.getElementById('antigravity-version-badge').textContent = `Monthly Summary`;
+
+  // 2. 更新指標卡片
+  const activeAgents = getActiveAgents();
+  const isMulti = activeAgents.length > 1;
+
+  if (!isMulti) {
+    document.getElementById('monthly-stat-total-tokens').textContent = formatToken(summary.total_tokens);
+    document.getElementById('monthly-stat-input-tokens').textContent = formatToken(summary.total_input_tokens);
+    document.getElementById('monthly-stat-output-tokens').textContent = formatToken(summary.total_output_tokens);
+    document.getElementById('monthly-stat-sessions').textContent = summary.total_sessions;
+    document.getElementById('monthly-stat-total-cost').textContent = formatCost(summary.total_cost_usd || 0);
+  } else {
+    renderMonthlyMetricValue('monthly-stat-total-tokens', a => a.total_tokens, formatToken, agent_breakdown, activeAgents);
+    renderMonthlyMetricValue('monthly-stat-input-tokens', a => a.total_input_tokens, formatToken, agent_breakdown, activeAgents);
+    renderMonthlyMetricValue('monthly-stat-output-tokens', a => a.total_output_tokens, formatToken, agent_breakdown, activeAgents);
+    renderMonthlyMetricValue('monthly-stat-total-cost', a => a.total_cost_usd, formatCost, agent_breakdown, activeAgents);
+    
+    // For sessions: show individual session count list
+    let sessionsHtml = '<div class="stat-value-list">';
+    activeAgents.forEach(a => {
+      let emoji = '🤖';
+      let displayName = 'Antigravity CLI';
+      if (a === 'copilot') {
+        emoji = '🐱';
+        displayName = 'Copilot CLI';
+      } else if (a === 'codex') {
+        emoji = '⚡';
+        displayName = 'Codex CLI';
+      }
+      const val = (agent_breakdown && agent_breakdown[a]) ? agent_breakdown[a].total_sessions : 0;
+      sessionsHtml += `
+        <div class="stat-value-item">
+          <span class="agent-name" title="${displayName}">${emoji}</span>
+          <span class="val">${formatNumber(val)}</span>
+        </div>
+      `;
+    });
+    sessionsHtml += '</div>';
+    document.getElementById('monthly-stat-sessions').innerHTML = sessionsHtml;
+  }
+
+  const statCacheRead = document.getElementById('monthly-stat-cache-read');
+  const statInputPct = document.getElementById('monthly-stat-input-pct');
+  const statOutputPct = document.getElementById('monthly-stat-output-pct');
+  const statRequests = document.getElementById('monthly-stat-requests');
+
+  if (isMulti) {
+    if (statCacheRead) statCacheRead.classList.add('hidden');
+    if (statInputPct) statInputPct.classList.add('hidden');
+    if (statOutputPct) statOutputPct.classList.add('hidden');
+    if (statRequests) statRequests.classList.add('hidden');
+  } else {
+    if (statCacheRead) {
+      statCacheRead.classList.remove('hidden');
+      statCacheRead.textContent = `${t('cache_read_label')}: ${formatToken(summary.total_cache_read_tokens)} (${calculatePercentage(summary.total_cache_read_tokens, summary.total_tokens)})`;
+    }
+    if (statInputPct) {
+      statInputPct.classList.remove('hidden');
+      statInputPct.textContent = `${t('ratio_label')}: ${calculatePercentage(summary.total_input_tokens, summary.total_tokens)}`;
+    }
+    if (statOutputPct) {
+      statOutputPct.classList.remove('hidden');
+      statOutputPct.textContent = `${t('ratio_label')}: ${calculatePercentage(summary.total_output_tokens, summary.total_tokens)}`;
+    }
+    if (statRequests) {
+      statRequests.classList.remove('hidden');
+      statRequests.textContent = t('monthly_requests_count').replace('{count}', formatNumber(summary.total_requests));
+    }
+  }
+
+  // 3. 繪製單月每日趨勢圖
+  renderMonthlyChart(daily_breakdown);
+
+  // 4. 渲染最常活動專案列表
+  renderMonthlyProjectsTable(projects);
+
+  // 5. 渲染模型佔比列表
+  renderMonthlyModelsTable(models);
+
+  // 6. 渲染當月每日彙總列表
+  monthlyDailySortColumn = 'date';
+  monthlyDailySortDirection = 'desc';
+  sortAndRenderMonthlyDailyTable();
+}
+
+// =========================================================================
+// 渲染單月每日 Token 與 Session 趨勢圖
+// =========================================================================
+function renderMonthlyChart(dailyBreakdown) {
+  currentMonthlyBreakdown = dailyBreakdown;
+  const canvas = document.getElementById('monthlyTokenChart');
+
+  // 提取標籤與數據
+  const labels = dailyBreakdown.map(entry => entry.date.substring(5)); // 只顯示 MM-DD
+  const tokenData = dailyBreakdown.map(entry => entry.total_tokens);
+  const cacheData = dailyBreakdown.map(entry => entry.total_cache_read_tokens || 0);
+  const sessionData = dailyBreakdown.map(entry => entry.total_sessions);
+
+  // 若圖表已存在，則動態更新數據以達到平滑變動效果
+  if (monthlyChartInstance) {
+    monthlyChartInstance.data.labels = labels;
+    monthlyChartInstance.data.datasets[0].label = t('chart_monthly_token_label');
+    monthlyChartInstance.data.datasets[1].label = t('chart_cache_label');
+    monthlyChartInstance.data.datasets[2].label = t('chart_monthly_session_label');
+    monthlyChartInstance.data.datasets[0].data = tokenData;
+    monthlyChartInstance.data.datasets[1].data = cacheData;
+    monthlyChartInstance.data.datasets[2].data = sessionData;
+    if (monthlyChartInstance.options.scales && monthlyChartInstance.options.scales.y && monthlyChartInstance.options.scales.y.title) {
+      monthlyChartInstance.options.scales.y.title.text = t('col_total');
+    }
+    if (monthlyChartInstance.options.scales && monthlyChartInstance.options.scales.y1 && monthlyChartInstance.options.scales.y1.title) {
+      monthlyChartInstance.options.scales.y1.title.text = t('col_sessions_count');
+    }
+    monthlyChartInstance.update();
+    return;
+  }
+
+  monthlyChartInstance = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: t('chart_monthly_token_label'),
+          data: tokenData,
+          backgroundColor: 'rgba(0, 242, 254, 0.22)',
+          borderColor: '#00f2fe',
+          borderWidth: 1.5,
+          borderRadius: 6,
+          yAxisID: 'y',
+          grouped: false,
+          barPercentage: 0.8,
+        },
+        {
+          label: t('chart_cache_label'),
+          data: cacheData,
+          backgroundColor: 'rgba(129, 140, 248, 0.75)',
+          borderColor: '#818cf8',
+          borderWidth: 1.5,
+          borderRadius: 6,
+          yAxisID: 'y',
+          grouped: false,
+          barPercentage: 0.8,
+        },
+        {
+          label: t('chart_monthly_session_label'),
+          data: sessionData,
+          type: 'line',
+          borderColor: '#ff4b5c',
+          backgroundColor: 'rgba(255, 75, 92, 0.2)',
+          borderWidth: 2,
+          pointBackgroundColor: '#ff4b5c',
+          pointRadius: 4,
+          tension: 0.2,
+          yAxisID: 'y1',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: (event, elements) => {
+        if (elements && elements.length > 0) {
+          const index = elements[0].index;
+          const selectedEntry = currentMonthlyBreakdown[index];
+          if (selectedEntry && selectedEntry.date) {
+            switchToDailyDate(selectedEntry.date);
+          }
+        }
+      },
+      onHover: (event, activeElements) => {
+        canvas.style.cursor = activeElements.length ? 'pointer' : 'default';
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#f3f4f6',
+            font: {
+              family: 'Outfit'
+            }
+          }
+        },
+        tooltip: {
+          padding: 12,
+          backgroundColor: 'rgba(15, 18, 29, 0.95)',
+          titleColor: '#00f2fe',
+          bodyColor: '#f3f4f6',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          borderWidth: 1,
+          callbacks: {
+            label: (context) => {
+              const label = context.dataset.label || '';
+              const value = context.parsed.y;
+              if (label.includes('Token')) {
+                return `${label}: ${formatToken(value)} (${formatNumber(value)})`;
+              }
+              return `${label}: ${formatNumber(value)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          stacked: false,
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          },
+          ticks: {
+            color: '#9ca3af',
+            font: {
+              size: 10
+            }
+          }
+        },
+        y: {
+          stacked: false,
+          type: 'linear',
+          position: 'left',
+          grid: {
+            color: 'rgba(255, 255, 255, 0.05)'
+          },
+          ticks: {
+            color: '#9ca3af',
+            callback: (value) => formatToken(value)
+          },
+          title: {
+            display: true,
+            text: t('col_total'),
+            color: '#f3f4f6'
+          }
+        },
+        y1: {
+          stacked: false,
+          type: 'linear',
+          position: 'right',
+          grid: {
+            drawOnChartArea: false,
+          },
+          ticks: {
+            color: '#9ca3af',
+            stepSize: 1
+          },
+          title: {
+            display: true,
+            text: t('col_sessions_count')
+          }
+        }
+      }
+    }
+  });
+
+  // 根據當前主題更新圖表樣式
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+  updateChartsTheme(currentTheme);
+}
+
+// =========================================================================
+// 渲染最常活動專案列表 Table
+// =========================================================================
+function renderMonthlyProjectsTable(projects) {
+  const tbody = document.getElementById('monthly-projects-body');
+  tbody.innerHTML = '';
+
+  if (projects.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="placeholder-text">${t('placeholder_no_projects')}</td></tr>`;
+    return;
+  }
+
+  // 僅取前 15 名
+  const displayProjects = projects.slice(0, 15);
+
+  displayProjects.forEach((p, idx) => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'default';
+
+    tr.innerHTML = `
+      <td style="text-align: center;"><span class="badge ${idx < 3 ? 'highlight' : ''}">${idx + 1}</span></td>
+      <td class="cwd-cell" title="${escapeHtml(p.project)}" style="max-width: 250px;">${escapeHtml(p.project)}</td>
+      <td><span class="badge">${p.session_count} Sessions</span></td>
+      <td style="font-weight: 700; color: var(--accent-cyan);">
+        ${formatToken(p.total_tokens)}
+        ${p.total_cache_read_tokens ? `<div style="font-size: 0.72rem; font-weight: normal; color: #a5b4fc; margin-top: 3px;" title="${t('chart_cache_label')}">${t('cache_prefix')}${formatToken(p.total_cache_read_tokens)}</div>` : ''}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// =========================================================================
+// 渲染模型佔比列表 Table
+// =========================================================================
+function renderMonthlyModelsTable(models) {
+  const tbody = document.getElementById('monthly-models-body');
+  tbody.innerHTML = '';
+
+  if (models.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="placeholder-text">${t('placeholder_no_models')}</td></tr>`;
+    return;
+  }
+
+  models.forEach((m, idx) => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'default';
+
+    tr.innerHTML = `
+      <td style="text-align: center;"><span class="badge ${idx < 3 ? 'highlight' : ''}">${idx + 1}</span></td>
+      <td><span class="badge highlight">${escapeHtml(m.model)}</span></td>
+      <td><span class="badge">${m.session_count} Sessions</span></td>
+      <td style="font-weight: 700; color: var(--accent-purple);">
+        ${formatToken(m.total_tokens)}
+        ${m.total_cache_read_tokens ? `<div style="font-size: 0.72rem; font-weight: normal; color: #a5b4fc; margin-top: 3px;" title="${t('chart_cache_label')}">${t('cache_prefix')}${formatToken(m.total_cache_read_tokens)}</div>` : ''}
+      </td>
+      <td style="font-weight: 700; color: var(--neon-gold);">${formatCost(m.cost_usd || 0)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// =========================================================================
+// 渲染當月每日彙總 Table
+// =========================================================================
+function renderMonthlyDailySummaryTable(dailyBreakdown) {
+  const tbody = document.getElementById('monthly-daily-summary-body');
+  tbody.innerHTML = '';
+
+  if (!dailyBreakdown || dailyBreakdown.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="placeholder-text">${t('placeholder_no_daily_summary')}</td></tr>`;
+    return;
+  }
+
+  dailyBreakdown.forEach(entry => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    
+    // 點選整列可跳轉並帶入該日期查詢
+    tr.addEventListener('click', () => {
+      switchToDailyDate(entry.date);
+    });
+
+    tr.innerHTML = `
+      <td style="font-weight: 600; color: var(--accent-cyan);">${escapeHtml(entry.date)}</td>
+      <td style="color: var(--text-secondary);">${formatToken(entry.total_input_tokens || 0)}</td>
+      <td style="color: var(--text-secondary);">${formatToken(entry.total_output_tokens || 0)}</td>
+      <td style="color: #a78bfa;">${formatToken(entry.total_reasoning_tokens || 0)}</td>
+      <td style="color: #34d399;">${formatToken(entry.total_cache_read_tokens || 0)}</td>
+      <td style="font-weight: 700; color: #fbbf24;">${formatToken(entry.total_tokens)}</td>
+      <td style="font-weight: 700; color: var(--neon-gold);">${formatCost(entry.cost_usd || 0)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function sortAndRenderMonthlyDailyTable() {
+  if (!currentMonthlyBreakdown || currentMonthlyBreakdown.length === 0) {
+    renderMonthlyDailySummaryTable([]);
+    return;
+  }
+
+  currentMonthlyBreakdown.sort((a, b) => {
+    let valA, valB;
+    if (monthlyDailySortColumn === 'date') {
+      valA = a.date;
+      valB = b.date;
+    } else {
+      const keyMap = {
+        'input': 'total_input_tokens',
+        'output': 'total_output_tokens',
+        'reasoning': 'total_reasoning_tokens',
+        'cache': 'total_cache_read_tokens',
+        'total': 'total_tokens',
+        'cost': 'cost_usd'
+      };
+      const field = keyMap[monthlyDailySortColumn] || monthlyDailySortColumn;
+      valA = a[field];
+      valB = b[field];
+    }
+
+    // 空值處理
+    if (valA === undefined || valA === null) valA = 0;
+    if (valB === undefined || valB === null) valB = 0;
+
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return monthlyDailySortDirection === 'asc' 
+        ? valA.localeCompare(valB) 
+        : valB.localeCompare(valA);
+    }
+
+    return monthlyDailySortDirection === 'asc' ? valA - valB : valB - valA;
+  });
+
+  renderMonthlyDailySummaryTable(currentMonthlyBreakdown);
+  updateMonthlySortHeadersUI();
+}
+
+function updateMonthlySortHeadersUI() {
+  const headers = document.querySelectorAll('.premium-table th.sortable[data-table="monthly"]');
+  headers.forEach(th => {
+    const column = th.getAttribute('data-sort');
+    const icon = th.querySelector('.sort-icon');
+    if (!icon) return;
+
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    
+    if (column === monthlyDailySortColumn) {
+      if (monthlyDailySortDirection === 'asc') {
+        th.classList.add('sorted-asc');
+        icon.innerHTML = '▴';
+      } else {
+        th.classList.add('sorted-desc');
+        icon.innerHTML = '▾';
+      }
+    } else {
+      icon.innerHTML = '<span class="sort-icon-placeholder">▴▾</span>';
+    }
+  });
+}
+
+// =========================================================================
+// 顯示精緻浮動通知 (Toast)
+// =========================================================================
+function showNotification(message, type = 'info') {
+  console.log(`[${type.toUpperCase()}] ${message}`);
+  
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.position = 'fixed';
+    container.style.bottom = '24px';
+    container.style.right = '24px';
+    container.style.zIndex = '9999';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '10px';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'glass-card';
+  toast.style.padding = '12px 20px';
+  toast.style.borderRadius = '10px';
+  toast.style.boxShadow = 'var(--shadow-lg)';
+  toast.style.border = '1px solid var(--glass-border)';
+  toast.style.animation = 'slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+  toast.style.display = 'flex';
+  toast.style.alignItems = 'center';
+  toast.style.gap = '10px';
+  toast.style.fontSize = '13px';
+  toast.style.fontWeight = '500';
+
+  if (!document.getElementById('toast-animation-styles')) {
+    const style = document.createElement('style');
+    style.id = 'toast-animation-styles';
+    style.innerHTML = `
+      @keyframes slideIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes fadeOut {
+        from { opacity: 1; transform: translateY(0); }
+        to { opacity: 0; transform: translateY(-20px); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  let icon = 'ℹ️';
+  let color = 'var(--accent-cyan)';
+  if (type === 'success') {
+    icon = '✅';
+    color = 'var(--neon-green)';
+  } else if (type === 'error') {
+    icon = '❌';
+    color = 'var(--neon-red)';
+  }
+
+  toast.innerHTML = `<span style="font-size: 16px;">${icon}</span> <span style="color: ${color}; font-family: var(--font-display);">${message}</span>`;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.animation = 'fadeOut 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+    toast.addEventListener('animationend', () => {
+      toast.remove();
+    });
+  }, 3000);
+}
+
+// =========================================================================
+// 主題切換 (Light / Dark Theme Toggle)
+// =========================================================================
+function initThemeToggle() {
+  const savedTheme = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  updateThemeButton(savedTheme);
+
+  const themeBtn = document.getElementById('theme-toggle-btn');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      updateThemeButton(newTheme);
+      
+      // 動態更新 Chart.js 顏色
+      updateChartsTheme(newTheme);
+    });
+  }
+}
+
+function updateThemeButton(theme) {
+  const themeBtn = document.getElementById('theme-toggle-btn');
+  if (themeBtn) {
+    themeBtn.textContent = theme === 'dark' ? '🌞' : '🌙';
+    themeBtn.title = theme === 'dark' ? t('theme_toggle_title_dark') : t('theme_toggle_title_light');
+  }
+}
+
+function updateChartsTheme(theme) {
+  const isLight = theme === 'light';
+  const textColor = isLight ? '#1e293b' : '#f3f4f6';
+  const mutedColor = isLight ? '#64748b' : '#9ca3af';
+  const gridColor = isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.05)';
+  const tooltipBg = isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(15, 18, 29, 0.95)';
+  const tooltipBorder = isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)';
+
+  [tokenChartInstance, monthlyChartInstance].forEach(chart => {
+    if (chart) {
+      // 更新標籤文字顏色
+      if (chart.options.plugins.legend && chart.options.plugins.legend.labels) {
+        chart.options.plugins.legend.labels.color = textColor;
+      }
+      // 更新 Tooltip 樣式
+      if (chart.options.plugins.tooltip) {
+        chart.options.plugins.tooltip.backgroundColor = tooltipBg;
+        chart.options.plugins.tooltip.titleColor = isLight ? '#0284c7' : '#00f2fe';
+        chart.options.plugins.tooltip.bodyColor = textColor;
+        chart.options.plugins.tooltip.borderColor = tooltipBorder;
+      }
+      // 更新軸線刻度與網格顏色
+      if (chart.options.scales) {
+        Object.keys(chart.options.scales).forEach(scaleKey => {
+          const scale = chart.options.scales[scaleKey];
+          if (scale.grid) {
+            scale.grid.color = gridColor;
+          }
+          if (scale.ticks) {
+            scale.ticks.color = mutedColor;
+          }
+          if (scale.title) {
+            scale.title.color = textColor;
+          }
+        });
+      }
+      chart.update();
+    }
+  });
+}
+
+// =========================================================================
+// Setup Guide Modal & Clipboard Dynamic Logic
+// =========================================================================
+function initSetupGuide() {
+  const setupBtn = document.getElementById('btn-setup-guide');
+  const closeBtn = document.getElementById('close-setup-modal-btn');
+  const modalOverlay = document.getElementById('setup-guide-modal');
+
+  if (setupBtn && modalOverlay) {
+    setupBtn.addEventListener('click', openSetupModal);
+  }
+
+  if (closeBtn && modalOverlay) {
+    closeBtn.addEventListener('click', closeSetupModal);
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) {
+        closeSetupModal();
+      }
+    });
+  }
+
+  // Bind Escape key to close setup modal
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeSetupModal();
+    }
+  });
+
+  // Load absolute script path info and build clipboard configs dynamically
+  loadSetupInfo();
+
+  // Bind clipboard copy buttons
+  initClipboardButtons();
+}
+
+function openSetupModal() {
+  const modal = document.getElementById('setup-guide-modal');
+  if (modal) {
+    const statuslineBody = document.getElementById('setup-body-statusline');
+    const codexBody = document.getElementById('setup-body-codex');
+    if (currentAssistant === 'codex') {
+      if (statuslineBody) statuslineBody.style.display = 'none';
+      if (codexBody) codexBody.style.display = 'block';
+    } else {
+      if (statuslineBody) statuslineBody.style.display = 'block';
+      if (codexBody) codexBody.style.display = 'none';
+    }
+    loadSetupInfo();
+    modal.classList.add('active');
+  }
+}
+
+function closeSetupModal() {
+  const modal = document.getElementById('setup-guide-modal');
+  if (modal) {
+    modal.classList.remove('active');
+  }
+}
+
+async function loadSetupInfo() {
+  try {
+    const resolvedAssistant = ['antigravity', 'copilot', 'codex'].includes(currentAssistant) ? currentAssistant : 'antigravity';
+    const res = await fetch(`/api/${resolvedAssistant}/setup-info`);
+    const data = await res.json();
+    
+    // Dynamic values based on home_dir
+    const homeDir = data.home_dir || '/home/user';
+    
+    if (currentAssistant === 'antigravity' || currentAssistant === 'copilot') {
+      const folder = currentAssistant === 'copilot' ? '.copilot' : '.antigravity';
+      const targetScriptPath = `${homeDir}/${folder}/statusline-token.sh`;
+
+      const settingsJson = JSON.stringify({
+        "statusLine": {
+          "type": "command",
+          "command": targetScriptPath,
+          "padding": 1
+        }
+      }, null, 2);
+
+      const mergedJson = JSON.stringify({
+        "footer": {
+          "showDirectory": true,
+          "showBranch": true
+        },
+        "statusLine": {
+          "type": "command",
+          "command": targetScriptPath,
+          "padding": 1
+        }
+      }, null, 2);
+
+      // Render to DOM
+      const homeLabel = document.getElementById('lbl-detected-home');
+      const jsonCodeEl = document.getElementById('code-setup-json');
+      const mergeCodeEl = document.getElementById('code-setup-json-merge');
+      const setupCmdEl = document.getElementById('code-setup-cmd');
+      const troubleshootAEl = document.getElementById('code-troubleshoot-a');
+      const troubleshootBEl = document.getElementById('code-troubleshoot-b');
+
+      const copyJsonBtn = document.getElementById('btn-copy-json');
+      const copyMergeBtn = document.getElementById('btn-copy-json-merge');
+
+      if (homeLabel) homeLabel.textContent = homeDir;
+      if (jsonCodeEl) jsonCodeEl.textContent = settingsJson;
+      if (copyJsonBtn) copyJsonBtn.setAttribute('data-clipboard-text', settingsJson);
+      
+      if (mergeCodeEl) mergeCodeEl.textContent = mergedJson;
+      if (copyMergeBtn) copyMergeBtn.setAttribute('data-clipboard-text', mergedJson);
+
+      if (setupCmdEl) {
+        setupCmdEl.textContent = `mkdir -p ~/${folder} && cp shell/statusline-token.sh ~/${folder}/statusline-token.sh && chmod +x ~/${folder}/statusline-token.sh`;
+      }
+      if (troubleshootAEl) {
+        troubleshootAEl.textContent = `echo '{}' | ~/${folder}/statusline-token.sh`;
+      }
+      if (troubleshootBEl) {
+        const displaySettingsPath = currentAssistant === 'copilot' 
+          ? `~/.copilot/settings.json`
+          : `~/.gemini/antigravity-cli/settings.json`;
+        troubleshootBEl.textContent = `jq . ${displaySettingsPath}`;
+      }
+    } else if (currentAssistant === 'codex') {
+      const homeLabelCodex = document.getElementById('lbl-detected-home-codex');
+      if (homeLabelCodex) homeLabelCodex.textContent = `${homeDir}/.codex`;
+    }
+
+  } catch (err) {
+    console.error('Failed to load dynamic setup paths:', err);
+  }
+}
+
+function initClipboardButtons() {
+  const copyButtons = document.querySelectorAll('.copy-code-btn');
+  
+  copyButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      // Prioritize data-clipboard-text, fallback to next code/pre element's textContent
+      let textToCopy = btn.getAttribute('data-clipboard-text');
+      if (!textToCopy) {
+        const codeEl = btn.nextElementSibling.querySelector('code') || btn.nextElementSibling;
+        textToCopy = codeEl ? codeEl.textContent : '';
+      }
+      
+      navigator.clipboard.writeText(textToCopy.trim()).then(() => {
+        const originalText = btn.textContent;
+        btn.textContent = t('copy_success');
+        btn.classList.add('copied');
+        
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.classList.remove('copied');
+        }, 2000);
+      }).catch((err) => {
+        console.error('Failed to copy text: ', err);
+        showNotification(t('copy_failed'), 'error');
+      });
+    });
+  });
+}
+
+function toggleEmptyState(showEmpty) {
+  isEmptyState = showEmpty;
+  const emptyContainer = document.getElementById('empty-state-container');
+  const dailyView = document.getElementById('daily-view-container');
+  const monthlyView = document.getElementById('monthly-view-container');
+  
+  if (showEmpty) {
+    if (emptyContainer) {
+      emptyContainer.classList.remove('hidden');
+      if (currentAssistant === 'none') {
+        emptyContainer.innerHTML = `
+          <div class="welcome-setup-card no-agent-card">
+            <div class="card-icon">⚠️</div>
+            <h2>${t('no_agent_selected_title')}</h2>
+            <p>${t('no_agent_selected_desc')}</p>
+          </div>
+        `;
+      } else {
+        emptyContainer.innerHTML = `
+          <div class="welcome-setup-card">
+            <div class="card-icon">🤖</div>
+            <h2>${t('empty_title')}</h2>
+            <p>${t('empty_desc')}</p>
+            <div class="action-buttons">
+              <button class="primary-btn" id="btn-empty-setup-guide">${t('btn_empty_setup')}</button>
+              <button class="secondary-btn" id="btn-empty-refresh">${t('btn_empty_refresh')}</button>
+            </div>
+          </div>
+        `;
+        
+        const emptyGuideBtn = document.getElementById('btn-empty-setup-guide');
+        if (emptyGuideBtn) {
+          emptyGuideBtn.addEventListener('click', openSetupModal);
+        }
+        
+        const emptyRefreshBtn = document.getElementById('btn-empty-refresh');
+        if (emptyRefreshBtn) {
+          emptyRefreshBtn.addEventListener('click', async () => {
+            emptyRefreshBtn.classList.add('loading');
+            await fetchDates();
+            emptyRefreshBtn.classList.remove('loading');
+          });
+        }
+      }
+    }
+    
+    if (dailyView) dailyView.classList.add('hidden');
+    if (monthlyView) monthlyView.classList.add('hidden');
+  } else {
+    if (emptyContainer) {
+      emptyContainer.classList.add('hidden');
+    }
+    if (activeTab === 'daily') {
+      if (dailyView) dailyView.classList.remove('hidden');
+      if (monthlyView) monthlyView.classList.add('hidden');
+    } else {
+      if (dailyView) dailyView.classList.add('hidden');
+      if (monthlyView) monthlyView.classList.remove('hidden');
+    }
+  }
+}
+
+// 點擊月度彙整圖表跳轉到每日即時
+function switchToDailyDate(date) {
+  const dateSelect = document.getElementById('date-select');
+  if (!dateSelect) return;
+
+  dateSelect.value = date;
+
+  // 切換 Tab 到 daily
+  if (activeTab === 'daily') {
+    loadUsageData(date);
+  } else {
+    // switchTab('daily') 內部會自動載入 dateSelect.value
+    switchTab('daily');
+  }
+}
+
+// =========================================================================
+// Pricing Rules & Modal Logic
+// =========================================================================
+async function fetchPricingRules() {
+  try {
+    const res = await fetch(`/api/${currentAssistant}/pricing`);
+    if (res.ok) {
+      pricingRules = await res.json();
+      console.log('Loaded pricing rules:', pricingRules);
+    } else {
+      console.error('Failed to fetch pricing rules');
+    }
+  } catch (err) {
+    console.error('Error fetching pricing rules:', err);
+  }
+}
+
+function initPricingModal() {
+  const pricingBtn = document.getElementById('btn-pricing-sheet');
+  const closeBtn = document.getElementById('close-pricing-modal-btn');
+  const modalOverlay = document.getElementById('pricing-modal');
+
+  if (pricingBtn && modalOverlay) {
+    pricingBtn.addEventListener('click', openPricingModal);
+  }
+
+  if (closeBtn && modalOverlay) {
+    closeBtn.addEventListener('click', closePricingModal);
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) {
+        closePricingModal();
+      }
+    });
+  }
+
+  // Bind Escape key to close pricing modal
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closePricingModal();
+    }
+  });
+}
+
+function openPricingModal() {
+  const modal = document.getElementById('pricing-modal');
+  if (modal) {
+    modal.classList.add('active');
+    renderPricingModalTable();
+  }
+}
+
+function closePricingModal() {
+  const modal = document.getElementById('pricing-modal');
+  if (modal) {
+    modal.classList.remove('active');
+  }
+}
+
+function renderPricingModalTable() {
+  const tbody = document.getElementById('pricing-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (!pricingRules || pricingRules.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="placeholder-text">載入中...</td></tr>';
+    return;
+  }
+
+  pricingRules.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'default';
+    tr.innerHTML = `
+      <td style="font-weight: 600;"><span class="badge highlight">${escapeHtml(r.model_name)}</span></td>
+      <td>${escapeHtml(r.deployment_type)}</td>
+      <td>${escapeHtml(r.unit)}</td>
+      <td style="color: var(--accent-cyan); font-weight: 600;">$${r.input_price.toFixed(2)}</td>
+      <td style="color: #34d399; font-weight: 600;">$${r.cache_input_price.toFixed(2)}</td>
+      <td style="color: #a78bfa; font-weight: 600;">$${r.output_price.toFixed(2)}</td>
+      <td style="color: var(--text-secondary);">${escapeHtml(r.batch_api_price)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function formatCost(cost) {
+  if (cost === null || cost === undefined) return '-';
+  const c = Number(cost);
+  if (isNaN(c)) return '-';
+  if (c === 0) return '$0.00';
+  if (c < 0.001) return '$' + c.toFixed(5);
+  if (c < 0.01) return '$' + c.toFixed(4);
+  return '$' + c.toFixed(3);
+}

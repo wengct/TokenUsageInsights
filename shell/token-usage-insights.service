@@ -1,0 +1,14 @@
+[Unit]
+Description=Unified AI CLI Token Usage Insights Dashboard Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=<PROJECT_DIR>
+ExecStart=<PROJECT_DIR>/target/release/token-usage-insights
+Restart=always
+RestartSec=5
+Environment=PORT=3003
+
+[Install]
+WantedBy=default.target

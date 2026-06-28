@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token Usage Insights</title>
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Prevent flash of theme mode -->
+  <script>
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  </script>
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="/static/styles.css">
+  <!-- Chart.js for beautiful charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Marked.js for rendering markdown response -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar: Date selector & Overview Cards -->
+    <aside class="app-sidebar">
+      <div class="brand">
+        <div class="logo"><img src="/static/favicon.ico" /></div>
+        <div class="title-group">
+          <h1 data-i18n="title">AI CLI Insights</h1>
+        </div>
+      </div>
+
+      <!-- Section 0: Assistant Selector -->
+      <div class="sidebar-section">
+        <h3 data-i18n="select_assistant">選擇 Agent 類型</h3>
+        <div class="assistant-badges-container" id="assistant-badges-container">
+          <button class="assistant-badge-btn active" data-value="antigravity" data-i18n="assistant_antigravity">🤖 Antigravity CLI</button>
+          <button class="assistant-badge-btn" data-value="copilot" data-i18n="assistant_copilot">🐱 GitHub Copilot CLI</button>
+          <button class="assistant-badge-btn" data-value="codex" data-i18n="assistant_codex">⚡ Codex CLI</button>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="sidebar-section">
+        <div class="tabs-nav">
+          <button class="nav-tab active" id="tab-btn-daily" data-i18n="tab_daily">📊 每日即時</button>
+          <button class="nav-tab" id="tab-btn-monthly" data-i18n="tab_monthly">📅 月度彙整</button>
+        </div>
+      </div>
+
+      <!-- Section 1: Daily Selector (for daily tab) -->
+      <div class="sidebar-section" id="daily-selector-section">
+        <h3 data-i18n="select_date">選擇日期</h3>
+        <div class="date-selector-wrapper" style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <input type="date" id="date-select" class="premium-date-input" style="flex: 1;">
+            <button id="btn-reload-daily" class="reload-btn" data-i18n-title="reload_data" title="重新載入數據">🔄</button>
+          </div>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <button id="btn-prev-day" class="today-btn" style="flex: 1; padding: 12px 8px;" title="前一天">◀</button>
+            <button id="btn-today" class="today-btn" style="flex: 2; padding: 12px 8px;">
+              <span>📅</span>
+              <span data-i18n="today_btn">今日</span>
+            </button>
+            <button id="btn-next-day" class="today-btn" style="flex: 1; padding: 12px 8px;" title="後一天">▶</button>
+          </div>
+        </div>
+        
+        <!-- Live Monitor Toggle -->
+        <div class="live-monitor-container">
+          <div class="live-status-row">
+            <span class="live-label">🔴 <span data-i18n="live_refresh">即時自動刷新</span></span>
+            <label class="switch-toggle">
+              <input type="checkbox" id="live-toggle">
+              <span class="slider-round"></span>
+            </label>
+          </div>
+          <div class="live-settings" id="live-settings-panel" style="display: none;">
+            <div class="setting-row">
+              <span data-i18n="refresh_interval">刷新頻率:</span>
+              <select id="live-interval" class="mini-select">
+                <option value="5000">5 <span data-i18n="seconds">秒</span></option>
+                <option value="10000" selected>10 <span data-i18n="seconds">秒</span></option>
+                <option value="30000">30 <span data-i18n="seconds">秒</span></option>
+              </select>
+            </div>
+            <div class="live-indicator-wrapper">
+              <div class="live-indicator">
+                <span class="ping-dot"></span>
+                <span class="live-indicator-text" id="live-status-text" data-i18n="status_preparing">準備中...</span>
+              </div>
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="refresh-progress"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Monthly Selector (hidden by default) -->
+      <div class="sidebar-section hidden" id="monthly-selector-section">
+        <h3 data-i18n="select_month">選擇月份</h3>
+        <div class="date-selector-wrapper" style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <select id="month-select" class="premium-select" style="flex: 1;">
+              <option value="" disabled selected data-i18n="loading">載入中...</option>
+            </select>
+            <button id="btn-reload-monthly" class="reload-btn" data-i18n-title="reload_data" title="重新載入數據">🔄</button>
+          </div>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <button id="btn-prev-month" class="today-btn" style="flex: 1; padding: 12px 8px;" data-i18n-title="prev_month_btn" title="上個月">◀</button>
+            <button id="btn-this-month" class="today-btn" style="flex: 2; padding: 12px 8px;">
+              <span>📅</span>
+              <span data-i18n="this_month_btn">今月</span>
+            </button>
+            <button id="btn-next-month" class="today-btn" style="flex: 1; padding: 12px 8px;" data-i18n-title="next_month_btn" title="下個月">▶</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Stats (daily only) -->
+      <div class="sidebar-section quick-stats" id="quick-stats-section">
+        <h3 data-i18n="quick_stats_title">當日彙整指標</h3>
+        <div class="stat-card mini">
+          <span class="label" data-i18n="stat_total_sessions">總 Session 數</span>
+          <span class="value" id="mini-sessions">-</span>
+        </div>
+        <div class="stat-card mini">
+          <span class="label" data-i18n="stat_total_tokens">總 Token 消耗</span>
+          <span class="value" id="mini-tokens">-</span>
+          <span class="sub-label" id="mini-cache">快取讀取: -</span>
+        </div>
+        <div class="stat-card mini">
+          <span class="label" data-i18n="col_cost">估算費用</span>
+          <span class="value" id="mini-cost">-</span>
+        </div>
+        <div class="stat-card mini">
+          <span class="label" data-i18n="stat_api_duration">累積 API 耗時</span>
+          <span class="value" id="mini-duration">-</span>
+        </div>
+        <div class="stat-card mini">
+          <span class="label" data-i18n="stat_total_requests">總請求次數</span>
+          <span class="value" id="mini-requests">-</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <header class="main-header">
+        <div class="header-title-container" style="display: flex; align-items: center; gap: 16px;">
+          <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" title="切換側邊欄">
+            <span class="toggle-icon">◀</span>
+          </button>
+          <div class="header-info">
+            <h2 id="current-date-title">
+              <span class="title-icon">📅</span>
+              <span class="title-text" data-i18n="select_date_prompt">請選擇日期以載入數據</span>
+            </h2>
+            <p class="description" data-i18n="header_description">一站式監控與分析您本地終端 AI Agent 的 Token 消耗與會話詳細數據</p>
+          </div>
+        </div>
+        <div class="header-controls" style="display: flex; align-items: center; gap: 12px;">
+          <select id="lang-select" class="premium-select-mini" title="切換語言 / Switch Language">
+            <option value="zh-TW">繁體中文</option>
+            <option value="en">English</option>
+          </select>
+          <button id="btn-pricing-sheet" class="setup-guide-btn" data-i18n-title="btn_pricing_sheet" title="費用標準">💰 <span data-i18n="btn_pricing_sheet">費用標準</span></button>
+          <button id="btn-setup-guide" class="setup-guide-btn" data-i18n-title="setup_guide_title" title="前置作業啟用教學">⚙️ <span data-i18n="setup_guide">啟用教學</span></button>
+          <button id="btn-sync-db" class="sync-db-btn" data-i18n-title="sync_db_title" title="立即手動同步日誌檔到 SQLite 資料庫">⚡ <span data-i18n="sync_db">同步資料庫</span></button>
+          <button id="theme-toggle-btn" class="theme-toggle-btn" title="切換主題">🌞</button>
+          <div class="header-badge" id="antigravity-version-badge">Version --</div>
+        </div>
+      </header>
+
+      <!-- Empty State Placeholder -->
+      <div id="empty-state-container" class="hidden"></div>
+
+      <!-- Daily View Container -->
+      <div id="daily-view-container">
+
+        <!-- Dashboard Grid: Statistics & Charts -->
+        <section class="dashboard-grid">
+          <!-- Metric Cards -->
+          <div class="stat-card highlight">
+            <div class="card-icon">⚡</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="total_tokens_label">總消耗 Token</span>
+              <span class="value" id="stat-total-tokens">0</span>
+              <span class="sub-label" id="stat-cache-read">快取讀取: -</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon">📥</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="input_tokens_label">輸入 Token</span>
+              <span class="value" id="stat-input-tokens">0</span>
+              <span class="sub-label" id="stat-input-pct">佔比: 0%</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon">📤</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="output_tokens_label">輸出 Token</span>
+              <span class="value" id="stat-output-tokens">0</span>
+              <span class="sub-label" id="stat-output-pct">佔比: 0%</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon">💡</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="reasoning_tokens_label">推理 Token</span>
+              <span class="value" id="stat-reasoning-tokens">0</span>
+              <span class="sub-label" id="stat-reasoning-pct">佔比: 0%</span>
+            </div>
+          </div>
+
+          <div class="stat-card highlight-gold">
+            <div class="card-icon">💰</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="estimated_cost_label">估算費用</span>
+              <span class="value" id="stat-total-cost">$0.00</span>
+              <span class="sub-label" id="stat-cost-desc" data-i18n="stat_cost_desc">基於 pricing.csv</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Charts Section -->
+        <section class="charts-section">
+          <div class="chart-container glass-card">
+            <h3 data-i18n="chart_daily_title">Token 消耗趨勢與快取狀況</h3>
+            <div class="canvas-wrapper">
+              <canvas id="tokenChart"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- Session List Section -->
+        <section class="sessions-section glass-card">
+          <div class="section-header">
+            <h3 data-i18n="sessions_table_title">今日會話列表 (Sessions)</h3>
+            <span class="session-count-badge" id="session-count">0 Sessions</span>
+          </div>
+          <div class="table-wrapper">
+            <table class="premium-table">
+              <thead>
+                <tr>
+                  <th class="sortable" data-sort="session_name"><span data-i18n="col_session">會話</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="assistant_type" id="col-assistant-header"><span data-i18n="col_assistant">Agent</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="model"><span data-i18n="col_model">Model</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="max_turn_no"><span data-i18n="col_turns">Turn 數</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="total_input_tokens"><span data-i18n="col_input">輸入</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="total_output_tokens"><span data-i18n="col_output">輸出</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="total_reasoning_tokens"><span data-i18n="col_reasoning">推理</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="total_cache_read_tokens"><span data-i18n="col_cache">快取</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="total_tokens"><span data-i18n="col_total">總計</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="cost_usd"><span data-i18n="col_cost">估算費用</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="duration_ms"><span data-i18n="col_duration">耗時</span> <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sort="timestamp"><span data-i18n="col_time">時間</span> <span class="sort-icon"></span></th>
+                </tr>
+              </thead>
+              <tbody id="session-list-body">
+                <tr>
+                  <td colspan="12" class="placeholder-text" data-i18n="placeholder_select_date">請先在左側選擇一個日期</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- Monthly View Container (hidden by default) -->
+      <div id="monthly-view-container" class="hidden">
+        <!-- Monthly Metrics Grid -->
+        <section class="dashboard-grid">
+          <div class="stat-card highlight">
+            <div class="card-icon">📆</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="monthly_tokens_label">月總消耗 Token</span>
+              <span class="value" id="monthly-stat-total-tokens">0</span>
+              <span class="sub-label" id="monthly-stat-cache-read">快取讀取: -</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon">📥</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="monthly_input_label">月輸入 Token</span>
+              <span class="value" id="monthly-stat-input-tokens">0</span>
+              <span class="sub-label" id="monthly-stat-input-pct">佔比: 0%</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon">📤</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="monthly_output_label">月輸出 Token</span>
+              <span class="value" id="monthly-stat-output-tokens">0</span>
+              <span class="sub-label" id="monthly-stat-output-pct">佔比: 0%</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon">👥</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="monthly_sessions_label">月總會話數</span>
+              <span class="value" id="monthly-stat-sessions">0</span>
+              <span class="sub-label" id="monthly-stat-requests">總請求: 0 次</span>
+            </div>
+          </div>
+
+          <div class="stat-card highlight-gold">
+            <div class="card-icon">💰</div>
+            <div class="stat-info">
+              <span class="label" data-i18n="estimated_cost_label">估算費用</span>
+              <span class="value" id="monthly-stat-total-cost">$0.00</span>
+              <span class="sub-label" id="monthly-stat-cost-desc" data-i18n="stat_cost_desc">基於 pricing.csv</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Monthly Charts Section -->
+        <section class="charts-section">
+          <div class="chart-container glass-card">
+            <h3 data-i18n="chart_monthly_title">單月每日 Token 消耗與會話數趨勢</h3>
+            <div class="canvas-wrapper">
+              <canvas id="monthlyTokenChart"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- Monthly Breakdown Grid -->
+        <section class="monthly-breakdown-grid">
+          <!-- Top Projects -->
+          <div class="glass-card">
+            <div class="section-header">
+              <h3 style="margin-bottom: 0px;" data-i18n="monthly_projects_title">🏢 最常活動的專案目錄</h3>
+            </div>
+            <div class="table-wrapper" style="margin-top: 18px;">
+              <table class="premium-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="col_rank">排名</th>
+                    <th data-i18n="col_project_cwd">工作路徑 (CWD)</th>
+                    <th data-i18n="col_sessions_count">會話數</th>
+                    <th data-i18n="col_total">總 Token</th>
+                  </tr>
+                </thead>
+                <tbody id="monthly-projects-body">
+                  <tr>
+                    <td colspan="4" class="placeholder-text" data-i18n="placeholder_no_projects">無專案數據</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Top Models -->
+          <div class="glass-card">
+            <div class="section-header">
+              <h3 style="margin-bottom: 0px;" data-i18n="monthly_models_title">🤖 使用的模型佔比</h3>
+            </div>
+            <div class="table-wrapper" style="margin-top: 18px;">
+              <table class="premium-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="col_rank">排名</th>
+                    <th data-i18n="col_model">使用的模型</th>
+                    <th data-i18n="col_sessions_count">會話數</th>
+                    <th data-i18n="col_total">總 Token</th>
+                    <th data-i18n="col_cost">估算費用</th>
+                  </tr>
+                </thead>
+                <tbody id="monthly-models-body">
+                  <tr>
+                    <td colspan="5" class="placeholder-text" data-i18n="placeholder_no_models">無模型數據</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+        </section>
+
+        <!-- Monthly Daily Summary -->
+        <section class="monthly-daily-summary-section" style="margin-top: 24px;">
+          <div class="glass-card">
+            <div class="section-header">
+              <h3 style="margin-bottom: 0px;" data-i18n="monthly_daily_summary_title">📅 當月每日彙總</h3>
+            </div>
+            <div class="table-wrapper" style="margin-top: 18px;">
+              <table class="premium-table">
+                <thead>
+                  <tr>
+                    <th class="sortable" data-sort="date" data-table="monthly"><span data-i18n="col_date">日期</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="input" data-table="monthly"><span data-i18n="col_input">輸入</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="output" data-table="monthly"><span data-i18n="col_output">輸出</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="reasoning" data-table="monthly"><span data-i18n="col_reasoning">推理</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="cache" data-table="monthly"><span data-i18n="col_cache">快取</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="total" data-table="monthly"><span data-i18n="col_total">總計</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="cost" data-table="monthly"><span data-i18n="col_cost">估算費用</span> <span class="sort-icon"></span></th>
+                  </tr>
+                </thead>
+                <tbody id="monthly-daily-summary-body">
+                  <tr>
+                    <td colspan="7" class="placeholder-text" data-i18n="placeholder_no_daily_summary">無每日彙總數據</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Session Timeline Modal / Drawer -->
+  <div class="drawer-overlay" id="timeline-drawer">
+    <div class="drawer-content">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="category" data-i18n="drawer_category">會話對話重建</span>
+          <h2 id="drawer-session-name">Session Name</h2>
+          <span class="session-id" id="drawer-session-id">Session ID</span>
+        </div>
+        <button class="close-btn" id="close-drawer-btn">&times;</button>
+      </div>
+
+      <div class="drawer-body">
+        <!-- Session Metadata Cards -->
+        <div class="session-meta-grid">
+          <div class="meta-item span-2">
+            <span class="lbl" data-i18n="drawer_cwd">工作路徑</span>
+            <span class="val" id="meta-cwd">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="lbl" data-i18n="drawer_repo">專案庫</span>
+            <span class="val" id="meta-repo">-</span>
+          </div>
+          <div class="meta-item">
+            <span class="lbl" data-i18n="drawer_branch">Git 分支</span>
+            <span class="val" id="meta-branch">-</span>
+          </div>
+          <div class="meta-item span-2">
+            <span class="lbl" data-i18n="drawer_model">Model</span>
+            <span class="val" id="meta-model">-</span>
+          </div>
+          <div class="meta-item" id="drawer-meta-nickname-container" style="display: none;">
+            <span class="lbl">Agent Nickname</span>
+            <span class="val" id="meta-nickname">-</span>
+          </div>
+          <div class="meta-item" id="drawer-meta-role-container" style="display: none;">
+            <span class="lbl">Agent Role</span>
+            <span class="val" id="meta-role">-</span>
+          </div>
+        </div>
+
+        <!-- Session Token Stats Cards -->
+        <div class="session-stats-grid">
+          <div class="meta-item stat-item">
+            <span class="lbl" data-i18n="drawer_input">輸入</span>
+            <span class="val" id="meta-input">-</span>
+          </div>
+          <div class="meta-item stat-item">
+            <span class="lbl" data-i18n="drawer_output">輸出</span>
+            <span class="val" id="meta-output">-</span>
+          </div>
+          <div class="meta-item stat-item">
+            <span class="lbl" data-i18n="drawer_reasoning">推理</span>
+            <span class="val" id="meta-reasoning">-</span>
+          </div>
+          <div class="meta-item stat-item">
+            <span class="lbl" data-i18n="drawer_cache">快取</span>
+            <span class="val" id="meta-cache">-</span>
+          </div>
+          <div class="meta-item stat-item">
+            <span class="lbl" data-i18n="drawer_compaction">壓縮次數</span>
+            <span class="val" id="meta-compaction">-</span>
+          </div>
+          <div class="meta-item stat-item highlight">
+            <span class="lbl" data-i18n="drawer_total">總計</span>
+            <span class="val" id="meta-tokens">-</span>
+          </div>
+        </div>
+
+        <!-- Reconstructed Timeline -->
+        <div class="timeline-container" id="timeline-items">
+          <!-- Timeline bubbles will be dynamically rendered here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Setup Guide Modal -->
+  <div class="modal-overlay" id="setup-guide-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h2 data-i18n="setup_modal_title">⚙️ Google Antigravity CLI 前置設定與啟用教學</h2>
+        </div>
+        <button class="close-btn" id="close-setup-modal-btn">&times;</button>
+      </div>
+      <!-- Status Line Setup Content (Antigravity & Copilot) -->
+      <div class="modal-body" id="setup-body-statusline">
+        <div class="modal-text">
+          <p data-i18n="setup_modal_intro">本 Dashboard 主要是解析並呈現 Google Antigravity CLI 的 <strong>Status Line (狀態列)</strong> 所收集的 Token 數據。我們將使用 <code>~/.antigravity/statusline-token.sh</code> 進行每日數據統計與會話紀錄。</p>
+        </div>
+
+        <div class="modal-section">
+          <h3 data-i18n="setup_step_1"><span>1️⃣</span> 1. 確認 script 有執行權限</h3>
+          <p class="modal-text" data-i18n="setup_step_1_desc">首先建立設定目錄，並將專案中的收集腳本複製至家目錄 of <code>.antigravity</code> 目錄下，最後賦予執行權限：</p>
+          <div class="code-block-container">
+            <button class="copy-code-btn" data-i18n="btn_copy_cmd" title="複製指令">📋 複製指令</button>
+            <pre><code id="code-setup-cmd">mkdir -p ~/.antigravity && cp shell/statusline-token.sh ~/.antigravity/statusline-token.sh && chmod +x ~/.antigravity/statusline-token.sh</code></pre>
+          </div>
+        </div>
+
+        <div class="modal-section">
+          <h3 data-i18n="setup_step_2"><span>2️⃣</span> 2. 編輯設定檔</h3>
+          <p class="modal-text" data-i18n="setup_step_2_desc">編輯或新增 Antigravity CLI 的設定檔 <code>~/.gemini/antigravity-cli/settings.json</code>：</p>
+          <div class="code-block-container" style="margin-bottom: 8px;">
+            <button class="copy-code-btn" data-i18n="btn_copy_cmd" title="複製指令">📋 複製指令</button>
+            <pre><code>nano ~/.gemini/antigravity-cli/settings.json</code></pre>
+          </div>
+          <p class="modal-text" data-i18n="setup_step_2_desc2">在設定檔中加入以下 <code>statusLine</code> 設定內容：</p>
+          <div class="code-block-container">
+            <button class="copy-code-btn" id="btn-copy-json" data-i18n="btn_copy_config" title="複製配置">📋 複製配置 JSON</button>
+            <pre><code id="code-setup-json">{
+  "statusLine": {
+    "type": "command",
+    "command": "/home/<username>/.antigravity/statusline-token.sh",
+    "padding": 1
+  }
+}</code></pre>
+          </div>
+          <div style="margin-top: 10px; padding: 12px; background: rgba(0, 242, 254, 0.05); border-left: 3px solid var(--accent-cyan); border-radius: 4px;" class="modal-text">
+            <strong data-i18n="setup_home_hint_title">💡 Home 目錄路徑提示：</strong><br>
+            <span data-i18n="setup_home_hint_desc">如果您的 <code>$HOME</code> 家目錄不是 <code id="lbl-detected-home">/home/&lt;username&gt;</code>，可在終端機執行 
+            <code style="background: rgba(255,255,255,0.15)">echo $HOME</code> 查詢您的家目錄路徑，並對應修改 <code>command</code> 欄位的值。</span>
+          </div>
+        </div>
+
+        <div class="modal-section">
+          <h3 data-i18n="setup_step_3"><span>3️⃣</span> 3. 已經有其他設定時（不要覆蓋）</h3>
+          <p class="modal-text" data-i18n="setup_step_3_desc">若您的 <code>settings.json</code> 中已經有其他現成設定，<strong>請勿整檔覆蓋</strong>，只需將 <code>statusLine</code> 屬性合併加入即可，例如：</p>
+          <div class="code-block-container">
+            <button class="copy-code-btn" id="btn-copy-json-merge" data-i18n="btn_copy_merge_example" title="複製合併範例">📋 複製合併範例</button>
+            <pre><code id="code-setup-json-merge">{
+  "footer": {
+    "showDirectory": true,
+    "showBranch": true
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/home/<username>/.antigravity/statusline-token.sh",
+    "padding": 1
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <div class="modal-section">
+          <h3 data-i18n="setup_step_4"><span>4️⃣</span> 4. 重開 Antigravity CLI</h3>
+          <p class="modal-text" data-i18n="setup_step_4_desc">設定完成並存檔後，請<strong>退出目前的 Antigravity CLI 聊天會話，並重新進入</strong>以套用全新設定。</p>
+        </div>
+
+        <div class="modal-section">
+          <h3 data-i18n="setup_step_5"><span>5️⃣</span> 5. 檢查是否成功</h3>
+          <p class="modal-text" data-i18n="setup_step_5_desc">進入 Antigravity CLI 會話聊天後，畫面底部應該會看到由本專案腳本收集並精緻渲染出的狀態列，如：</p>
+          <div class="code-block-container" style="background: rgba(255,255,255,0.02);">
+            <pre style="color: var(--neon-green);"><code>🤖 Auto → GPT-5.3-Codex • #1 • ↑ 22.8k • c 22.0k/0 • ↓ 61 • r 29 • total 22.9k • +22.9k • last 22.8k/61 • ctx 9%</code></pre>
+          </div>
+          
+          <div style="margin-top: 10px;" class="modal-text">
+            <strong data-i18n="setup_troubleshooting">⚠️ 除錯與檢查 (Troubleshooting)：</strong>
+            <p style="margin-top: 6px; margin-left: 12px;" data-i18n="setup_troubleshoot_a">🔍 <strong>A. 若狀態列未正常出現，請先單獨測試腳本是否能正常執行：</strong></p>
+            <div class="code-block-container" style="margin-left: 12px; margin-top: 4px;">
+              <button class="copy-code-btn" data-i18n="btn_copy_cmd" title="複製">📋 複製</button>
+              <pre><code id="code-troubleshoot-a">echo '{}' | ~/.antigravity/statusline-token.sh</code></pre>
+            </div>
+            
+            <p style="margin-top: 8px; margin-left: 12px;" data-i18n="setup_troubleshoot_b">🔍 <strong>B. 請確認 <code>settings.json</code> 是合法的 JSON 格式：</strong></p>
+            <div class="code-block-container" style="margin-left: 12px; margin-top: 4px;">
+              <button class="copy-code-btn" data-i18n="btn_copy_cmd" title="複製">📋 複製</button>
+              <pre><code id="code-troubleshoot-b">jq . ~/.gemini/antigravity-cli/settings.json</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Codex Setup Content -->
+      <div class="modal-body" id="setup-body-codex" style="display: none;">
+        <div class="modal-text">
+          <p data-i18n="codex_setup_modal_intro">本 Dashboard 主要是解析並呈現 Codex CLI 的本地會話事件與 Token 數據。因為 Codex CLI 會自動將會話記錄在 <code>~/.codex/sessions</code> 目錄下，您不需要進行任何腳本設定或狀態列修改，本 Dashboard 就會自動讀取並進行即時同步！</p>
+        </div>
+
+        <div class="modal-section">
+          <h3 data-i18n="codex_setup_step_1"><span>1️⃣</span> 1. 確認 Codex CLI 已在使用</h3>
+          <p class="modal-text" data-i18n="codex_setup_step_1_desc">只要您在終端機中執行過 Codex CLI 進行過對話，會話檔案就會自動生成在此目錄中。</p>
+        </div>
+
+        <div class="modal-section">
+          <h3 data-i18n="codex_setup_step_2"><span>2️⃣</span> 2. 偵測路徑狀態</h3>
+          <p class="modal-text" data-i18n="codex_setup_step_2_desc">目前偵測到的 Codex 目錄為：<code id="lbl-detected-home-codex">/home/chenting/.codex</code>。本系統會以極高效率對該目錄進行即時掃描與分析。</p>
+        </div>
+
+        <div class="modal-section">
+          <h3 data-i18n="codex_setup_step_3"><span>3️⃣</span> 3. 費用估算邏輯</h3>
+          <p class="modal-text" data-i18n="codex_setup_step_3_desc">費用會根據您的對話模型以 Token 數量為基準進行即時估算，排除快取部分後得出實際成本。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pricing Rates Modal -->
+  <div class="modal-overlay" id="pricing-modal">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h2 data-i18n="pricing_sheet_title">💰 Google Antigravity 費用標準表</h2>
+        </div>
+        <button class="close-btn" id="close-pricing-modal-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-text" style="margin-bottom: 16px;" data-i18n="pricing_intro">
+          此費用為本地估算，單價依據 <code>pricing.csv</code> 載入。單位為 1M Tokens (每百萬個 Token) 的美金價格：
+        </p>
+        <div class="table-wrapper">
+          <table class="premium-table">
+            <thead>
+              <tr>
+                <th>模型名稱 (Model Name)</th>
+                <th>部署類型 (Type)</th>
+                <th>單位 (Unit)</th>
+                <th>輸入價格 (Input Price)</th>
+                <th>快取輸入價格 (Cached Input)</th>
+                <th>輸出價格 (Output Price)</th>
+                <th>批次 API 價格 (Batch API)</th>
+              </tr>
+            </thead>
+            <tbody id="pricing-table-body">
+              <tr>
+                <td colspan="7" class="placeholder-text">載入中...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Frontend Javascript logic -->
+  <script src="/static/app.js"></script>
+</body>
+</html>

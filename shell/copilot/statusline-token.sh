@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+
+input="$(cat)"
+
+copilot_dir="$HOME/.copilot"
+usage_dir="$copilot_dir/usage"
+
+state_file="$copilot_dir/statusline-state.json"
+jsonl_file="$usage_dir/usage-$(date +%Y-%m-%d).jsonl"
+
+mkdir -p "$copilot_dir" "$usage_dir"
+
+now="$(date -Iseconds)"
+
+fmt_tokens() {
+  local n="$1"
+
+  if [ -z "$n" ] || ! [[ "$n" =~ ^[0-9]+$ ]]; then
+    echo "0"
+    return
+  fi
+
+  if [ "$n" -ge 999500 ]; then
+    awk -v n="$n" 'BEGIN {
+      v = n / 1000000
+      if (v >= 10) printf "%.1fm", v
+      else printf "%.2fm", v
+    }'
+  elif [ "$n" -ge 1000 ]; then
+    awk -v n="$n" 'BEGIN {
+      v = n / 1000
+      if (v >= 10) printf "%.1fk", v
+      else printf "%.2fk", v
+    }'
+  else
+    echo "$n"
+  fi
+}
+
+# Copilot 官方 session 資訊
+payload_session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
+session_name=$(printf '%s' "$input" | jq -r '.session_name // empty')
+transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
+cwd=$(printf '%s' "$input" | jq -r '.cwd // .workspace.current_dir // empty')
+version=$(printf '%s' "$input" | jq -r '.version // empty')
+
+if [ -z "$payload_session_id" ]; then
+  payload_session_id="$(date +%Y%m%d-%H%M%S)-$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
+fi
+
+session_id="$payload_session_id"
+
+model=$(printf '%s' "$input" | jq -r '
+  .model.display_name //
+  .model.id //
+  .modelName //
+  .current_model //
+  "unknown"
+')
+
+model_id=$(printf '%s' "$input" | jq -r '
+  .model.id //
+  .modelName //
+  .current_model //
+  "unknown"
+')
+
+input_tokens=$(printf '%s' "$input" | jq -r '.context_window.total_input_tokens // 0')
+output_tokens=$(printf '%s' "$input" | jq -r '.context_window.total_output_tokens // 0')
+cache_read_tokens=$(printf '%s' "$input" | jq -r '.context_window.total_cache_read_tokens // 0')
+cache_write_tokens=$(printf '%s' "$input" | jq -r '.context_window.total_cache_write_tokens // 0')
+reasoning_tokens=$(printf '%s' "$input" | jq -r '.context_window.total_reasoning_tokens // 0')
+
+# Copilot 已經提供 total_tokens，優先使用；沒有才自己加總
+total_tokens=$(printf '%s' "$input" | jq -r '.context_window.total_tokens // empty')
+if [ -z "$total_tokens" ] || ! [[ "$total_tokens" =~ ^[0-9]+$ ]]; then
+  total_tokens=$((input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens))
+fi
+
+last_call_input_tokens=$(printf '%s' "$input" | jq -r '.context_window.last_call_input_tokens // 0')
+last_call_output_tokens=$(printf '%s' "$input" | jq -r '.context_window.last_call_output_tokens // 0')
+current_context_tokens=$(printf '%s' "$input" | jq -r '.context_window.current_context_tokens // 0')
+displayed_context_limit=$(printf '%s' "$input" | jq -r '.context_window.displayed_context_limit // 0')
+current_context_used_percentage=$(printf '%s' "$input" | jq -r '.context_window.current_context_used_percentage // empty')
+
+total_api_duration_ms=$(printf '%s' "$input" | jq -r '.cost.total_api_duration_ms // 0')
+total_duration_ms=$(printf '%s' "$input" | jq -r '.cost.total_duration_ms // 0')
+total_premium_requests=$(printf '%s' "$input" | jq -r '.cost.total_premium_requests // 0')
+total_lines_added=$(printf '%s' "$input" | jq -r '.cost.total_lines_added // 0')
+total_lines_removed=$(printf '%s' "$input" | jq -r '.cost.total_lines_removed // 0')
+
+previous_session_id=""
+previous_model=""
+previous_turn_no=0
+
+previous_input_tokens=0
+previous_output_tokens=0
+previous_cache_read_tokens=0
+previous_cache_write_tokens=0
+previous_reasoning_tokens=0
+previous_total_tokens=0
+
+if [ -f "$state_file" ]; then
+  previous_session_id=$(jq -r '.session_id // ""' "$state_file")
+  previous_model=$(jq -r '.model // ""' "$state_file")
+  previous_turn_no=$(jq -r '.turn_no // 0' "$state_file")
+
+  previous_input_tokens=$(jq -r '.input_tokens // 0' "$state_file")
+  previous_output_tokens=$(jq -r '.output_tokens // 0' "$state_file")
+  previous_cache_read_tokens=$(jq -r '.cache_read_tokens // 0' "$state_file")
+  previous_cache_write_tokens=$(jq -r '.cache_write_tokens // 0' "$state_file")
+  previous_reasoning_tokens=$(jq -r '.reasoning_tokens // 0' "$state_file")
+  previous_total_tokens=$(jq -r '.total_tokens // 0' "$state_file")
+fi
+
+# 官方 session_id 不同，就視為新的 Copilot CLI session
+if [ "$previous_session_id" != "$session_id" ]; then
+  previous_model=""
+  previous_turn_no=0
+
+  previous_input_tokens=0
+  previous_output_tokens=0
+  previous_cache_read_tokens=0
+  previous_cache_write_tokens=0
+  previous_reasoning_tokens=0
+  previous_total_tokens=0
+fi
+
+delta_input=$((input_tokens - previous_input_tokens))
+delta_output=$((output_tokens - previous_output_tokens))
+delta_cache_read=$((cache_read_tokens - previous_cache_read_tokens))
+delta_cache_write=$((cache_write_tokens - previous_cache_write_tokens))
+delta_reasoning=$((reasoning_tokens - previous_reasoning_tokens))
+delta_total=$((total_tokens - previous_total_tokens))
+
+if [ "$delta_input" -lt 0 ]; then delta_input=0; fi
+if [ "$delta_output" -lt 0 ]; then delta_output=0; fi
+if [ "$delta_cache_read" -lt 0 ]; then delta_cache_read=0; fi
+if [ "$delta_cache_write" -lt 0 ]; then delta_cache_write=0; fi
+if [ "$delta_reasoning" -lt 0 ]; then delta_reasoning=0; fi
+if [ "$delta_total" -lt 0 ]; then delta_total=0; fi
+
+model_changed=false
+if [ -n "$previous_model" ] && [ "$previous_model" != "$model" ]; then
+  model_changed=true
+fi
+
+turn_no="$previous_turn_no"
+
+# 只有 token 增加才記一筆，視為一次有效問答回合
+if [ "$delta_total" -gt 0 ]; then
+  turn_no=$((previous_turn_no + 1))
+
+  jq -n \
+    --arg timestamp "$now" \
+    --arg session_id "$session_id" \
+    --arg session_name "$session_name" \
+    --arg transcript_path "$transcript_path" \
+    --arg cwd "$cwd" \
+    --arg version "$version" \
+    --arg model "$model" \
+    --arg model_id "$model_id" \
+    --arg previous_model "$previous_model" \
+    --argjson turn_no "$turn_no" \
+    --argjson model_changed "$model_changed" \
+    --argjson input_tokens "$input_tokens" \
+    --argjson output_tokens "$output_tokens" \
+    --argjson cache_read_tokens "$cache_read_tokens" \
+    --argjson cache_write_tokens "$cache_write_tokens" \
+    --argjson reasoning_tokens "$reasoning_tokens" \
+    --argjson total_tokens "$total_tokens" \
+    --argjson last_call_input_tokens "$last_call_input_tokens" \
+    --argjson last_call_output_tokens "$last_call_output_tokens" \
+    --argjson delta_input_tokens "$delta_input" \
+    --argjson delta_output_tokens "$delta_output" \
+    --argjson delta_cache_read_tokens "$delta_cache_read" \
+    --argjson delta_cache_write_tokens "$delta_cache_write" \
+    --argjson delta_reasoning_tokens "$delta_reasoning" \
+    --argjson delta_total_tokens "$delta_total" \
+    --argjson current_context_tokens "$current_context_tokens" \
+    --argjson displayed_context_limit "$displayed_context_limit" \
+    --arg current_context_used_percentage "$current_context_used_percentage" \
+    --argjson total_api_duration_ms "$total_api_duration_ms" \
+    --argjson total_duration_ms "$total_duration_ms" \
+    --argjson total_premium_requests "$total_premium_requests" \
+    --argjson total_lines_added "$total_lines_added" \
+    --argjson total_lines_removed "$total_lines_removed" \
+    '{
+      timestamp: $timestamp,
+      session_id: $session_id,
+      session_name: $session_name,
+      transcript_path: $transcript_path,
+      cwd: $cwd,
+      version: $version,
+      turn_no: $turn_no,
+      model: $model,
+      model_id: $model_id,
+      previous_model: $previous_model,
+      model_changed: $model_changed,
+      tokens: {
+        input: $input_tokens,
+        output: $output_tokens,
+        cache_read: $cache_read_tokens,
+        cache_write: $cache_write_tokens,
+        reasoning: $reasoning_tokens,
+        total: $total_tokens,
+        last_call_input: $last_call_input_tokens,
+        last_call_output: $last_call_output_tokens
+      },
+      delta_tokens: {
+        input: $delta_input_tokens,
+        output: $delta_output_tokens,
+        cache_read: $delta_cache_read_tokens,
+        cache_write: $delta_cache_write_tokens,
+        reasoning: $delta_reasoning_tokens,
+        total: $delta_total_tokens
+      },
+      context: {
+        current_context_tokens: $current_context_tokens,
+        displayed_context_limit: $displayed_context_limit,
+        current_context_used_percentage: $current_context_used_percentage
+      },
+      cost: {
+        total_api_duration_ms: $total_api_duration_ms,
+        total_duration_ms: $total_duration_ms,
+        total_premium_requests: $total_premium_requests,
+        total_lines_added: $total_lines_added,
+        total_lines_removed: $total_lines_removed
+      }
+    }' >> "$jsonl_file"
+fi
+
+jq -n \
+  --arg session_id "$session_id" \
+  --arg session_name "$session_name" \
+  --arg transcript_path "$transcript_path" \
+  --arg model "$model" \
+  --arg model_id "$model_id" \
+  --argjson turn_no "$turn_no" \
+  --argjson input_tokens "$input_tokens" \
+  --argjson output_tokens "$output_tokens" \
+  --argjson cache_read_tokens "$cache_read_tokens" \
+  --argjson cache_write_tokens "$cache_write_tokens" \
+  --argjson reasoning_tokens "$reasoning_tokens" \
+  --argjson total_tokens "$total_tokens" \
+  '{
+    session_id: $session_id,
+    session_name: $session_name,
+    transcript_path: $transcript_path,
+    model: $model,
+    model_id: $model_id,
+    turn_no: $turn_no,
+    input_tokens: $input_tokens,
+    output_tokens: $output_tokens,
+    cache_read_tokens: $cache_read_tokens,
+    cache_write_tokens: $cache_write_tokens,
+    reasoning_tokens: $reasoning_tokens,
+    total_tokens: $total_tokens
+  }' > "$state_file"
+
+display_input_total="$(fmt_tokens "$input_tokens")"
+display_cache_read="$(fmt_tokens "$cache_read_tokens")"
+display_cache_write="$(fmt_tokens "$cache_write_tokens")"
+display_output="$(fmt_tokens "$output_tokens")"
+display_reasoning="$(fmt_tokens "$reasoning_tokens")"
+display_total="$(fmt_tokens "$total_tokens")"
+display_delta_total="$(fmt_tokens "$delta_total")"
+display_last_input="$(fmt_tokens "$last_call_input_tokens")"
+display_last_output="$(fmt_tokens "$last_call_output_tokens")"
+
+# 顯示規則：
+# ↑ = total input
+# c = cache read/write
+# ↓ = total output
+# r = reasoning
+# last = last API call input/output
+line="🤖 $model • #$turn_no • ↑ $display_input_total • c $display_cache_read/$display_cache_write • ↓ $display_output • r $display_reasoning • total $display_total • +$display_delta_total • last $display_last_input/$display_last_output"
+
+if [ "$model_changed" = true ]; then
+  line="$line • from $previous_model"
+elif [ -n "$current_context_used_percentage" ]; then
+  line="$line • ctx ${current_context_used_percentage}%"
+fi
+
+printf "%s\n" "$line"
