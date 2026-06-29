@@ -200,6 +200,13 @@ const i18n = {
     no_agent_selected_desc: '您目前尚未選取任何 Agent 類型。請在左側側邊欄勾選/點擊選取至少一個 Agent (例如 Antigravity CLI, GitHub Copilot CLI, Codex CLI) 以呈現數據。',
     btn_empty_setup: '⚙️ 啟用前置設定教學',
     btn_empty_refresh: '🔄 重新整理檢查',
+    codex_rate_limit_title: 'Codex CLI 額度限制狀態',
+    codex_rate_limit_updated: '最後更新:',
+    codex_primary_label: '五小時內剩餘 (Primary)',
+    codex_secondary_label: '一週內剩餘 (Secondary)',
+    codex_reset_time: '下次重置時間:',
+    codex_rate_limit_unlimited: '無限制',
+    codex_rate_limit_remaining: '剩餘 {percent}%',
     usage_report: '使用量報告：',
     loading_prefix: '載入中: ',
     loading_month_prefix: '載入月份數據中: ',
@@ -402,6 +409,13 @@ const i18n = {
     no_agent_selected_desc: 'You have not selected any Agent type. Please select at least one Agent (e.g., Antigravity CLI, GitHub Copilot CLI, Codex CLI) on the left sidebar to display data.',
     btn_empty_setup: '⚙️ View Setup Guide',
     btn_empty_refresh: '🔄 Reload and Check',
+    codex_rate_limit_title: 'Codex CLI Rate Limit Status',
+    codex_rate_limit_updated: 'Last Updated:',
+    codex_primary_label: 'Remaining in 5 Hours (Primary)',
+    codex_secondary_label: 'Remaining in 1 Week (Secondary)',
+    codex_reset_time: 'Next Reset:',
+    codex_rate_limit_unlimited: 'Unlimited',
+    codex_rate_limit_remaining: '{percent}% remaining',
     usage_report: 'Usage Report: ',
     loading_prefix: 'Loading: ',
     loading_month_prefix: 'Loading Monthly Data: ',
@@ -515,6 +529,7 @@ function updateLanguageUI() {
 
   // Update dynamic brand logo in sidebar
   updateBrandLogo();
+  updateCodexRateLimit();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -954,6 +969,7 @@ function switchTab(tab) {
       fetchMonths();
     }
   }
+  updateCodexRateLimit();
 }
 
 // =========================================================================
@@ -1146,12 +1162,14 @@ async function loadUsageData(date) {
     if (res.status === 404) {
       // 顯示「此 Agent 當日無資料」提示畫面，不改變日期
       showNoDataForDate(date);
+      await updateCodexRateLimit();
       return;
     }
     
     const data = await res.json();
     toggleEmptyState(false);
     renderDashboard(data);
+    await updateCodexRateLimit();
 
   } catch (err) {
     console.error('載入使用量失敗:', err);
@@ -3276,6 +3294,7 @@ function toggleEmptyState(showEmpty) {
       if (monthlyView) monthlyView.classList.remove('hidden');
     }
   }
+  updateCodexRateLimit();
 }
 
 // 點擊月度彙整圖表跳轉到每日即時
@@ -3386,4 +3405,81 @@ function formatCost(cost) {
   if (c < 0.001) return '$' + c.toFixed(5);
   if (c < 0.01) return '$' + c.toFixed(4);
   return '$' + c.toFixed(3);
+}
+
+async function updateCodexRateLimit() {
+  const panel = document.getElementById('codex-rate-limit-panel');
+  if (!panel) return;
+
+  if (currentAssistant !== 'codex' || activeTab !== 'daily' || isEmptyState) {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/codex/rate-limit`);
+    if (!res.ok) {
+      if (res.status === 404) {
+        document.getElementById('codex-rate-limit-primary-val').textContent = '--';
+        document.getElementById('codex-rate-limit-primary-bar').style.width = '0%';
+        document.getElementById('codex-rate-limit-primary-reset').textContent = t('codex_reset_time') + ' --';
+        document.getElementById('codex-rate-limit-secondary-val').textContent = '--';
+        document.getElementById('codex-rate-limit-secondary-bar').style.width = '0%';
+        document.getElementById('codex-rate-limit-secondary-reset').textContent = t('codex_reset_time') + ' --';
+        document.getElementById('codex-rate-limit-updated').textContent = t('codex_rate_limit_updated') + ' --';
+        panel.classList.remove('hidden');
+      }
+      return;
+    }
+    const data = await res.json();
+    
+    if (data.primary) {
+      const remainingPercent = Math.max(0, 100.0 - data.primary.used_percent);
+      const remainingPercentText = remainingPercent.toFixed(1) + '%';
+      document.getElementById('codex-rate-limit-primary-val').textContent = t('codex_rate_limit_remaining').replace('{percent}', remainingPercent.toFixed(1));
+      document.getElementById('codex-rate-limit-primary-bar').style.width = remainingPercentText;
+      const resetTime = new Date(data.primary.resets_at * 1000);
+      document.getElementById('codex-rate-limit-primary-reset').textContent = t('codex_reset_time') + ' ' + formatDateTime(resetTime);
+    } else {
+      document.getElementById('codex-rate-limit-primary-val').textContent = t('codex_rate_limit_unlimited');
+      document.getElementById('codex-rate-limit-primary-bar').style.width = '100%';
+      document.getElementById('codex-rate-limit-primary-reset').textContent = t('codex_reset_time') + ' --';
+    }
+
+    if (data.secondary) {
+      const remainingPercent = Math.max(0, 100.0 - data.secondary.used_percent);
+      const remainingPercentText = remainingPercent.toFixed(1) + '%';
+      document.getElementById('codex-rate-limit-secondary-val').textContent = t('codex_rate_limit_remaining').replace('{percent}', remainingPercent.toFixed(1));
+      document.getElementById('codex-rate-limit-secondary-bar').style.width = remainingPercentText;
+      const resetTime = new Date(data.secondary.resets_at * 1000);
+      document.getElementById('codex-rate-limit-secondary-reset').textContent = t('codex_reset_time') + ' ' + formatDateTime(resetTime);
+    } else {
+      document.getElementById('codex-rate-limit-secondary-val').textContent = t('codex_rate_limit_unlimited');
+      document.getElementById('codex-rate-limit-secondary-bar').style.width = '100%';
+      document.getElementById('codex-rate-limit-secondary-reset').textContent = t('codex_reset_time') + ' --';
+    }
+
+    if (data.timestamp) {
+      const updateTime = new Date(data.timestamp);
+      document.getElementById('codex-rate-limit-updated').textContent = t('codex_rate_limit_updated') + ' ' + formatDateTime(updateTime);
+    } else {
+      document.getElementById('codex-rate-limit-updated').textContent = t('codex_rate_limit_updated') + ' --';
+    }
+
+    panel.classList.remove('hidden');
+  } catch (err) {
+    console.error('更新 Codex Rate Limit 失敗:', err);
+  }
+}
+
+function formatDateTime(dateObj) {
+  if (!dateObj || isNaN(dateObj.getTime())) return '';
+  const pad = (num) => String(num).padStart(2, '0');
+  const year = dateObj.getFullYear();
+  const month = pad(dateObj.getMonth() + 1);
+  const date = pad(dateObj.getDate());
+  const hours = pad(dateObj.getHours());
+  const minutes = pad(dateObj.getMinutes());
+  const seconds = pad(dateObj.getSeconds());
+  return `${year}-${month}-${date} ${hours}:${minutes}:${seconds}`;
 }

@@ -179,6 +179,45 @@
       <!-- Empty State Placeholder -->
       <div id="empty-state-container" class="hidden"></div>
 
+      <!-- Codex Rate Limit Panel -->
+      <div id="codex-rate-limit-panel" class="hidden" style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="section-title-wrapper" style="display: flex; align-items: center; justify-content: space-between;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+            <span>⏱️</span> <span data-i18n="codex_rate_limit_title">Codex CLI 額度限制狀態</span>
+          </h3>
+          <span class="text-muted" style="font-size: 12px;" id="codex-rate-limit-updated">最後更新: --</span>
+        </div>
+        <div class="dashboard-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+          
+          <!-- Primary Limit Card (5 Hours) -->
+          <div class="stat-card highlight">
+            <div class="card-icon">⏳</div>
+            <div class="stat-info" style="flex: 1; min-width: 0;">
+              <span class="label" id="lbl-codex-primary" data-i18n="codex_primary_label">五小時內剩餘 (Primary)</span>
+              <span class="value" id="codex-rate-limit-primary-val">--</span>
+              <div style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin: 8px 0 4px 0; overflow: hidden; width: 100%;">
+                <div id="codex-rate-limit-primary-bar" style="width: 0%; height: 100%; border-radius: 3px; background: var(--accent-cyan); transition: width 0.5s ease-out;"></div>
+              </div>
+              <span class="sub-label" id="codex-rate-limit-primary-reset">下次重置: --</span>
+            </div>
+          </div>
+
+          <!-- Secondary Limit Card (1 Week) -->
+          <div class="stat-card highlight-gold">
+            <div class="card-icon">📅</div>
+            <div class="stat-info" style="flex: 1; min-width: 0;">
+              <span class="label" id="lbl-codex-secondary" data-i18n="codex_secondary_label">一週內剩餘 (Secondary)</span>
+              <span class="value" id="codex-rate-limit-secondary-val">--</span>
+              <div style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin: 8px 0 4px 0; overflow: hidden; width: 100%;">
+                <div id="codex-rate-limit-secondary-bar" style="width: 0%; height: 100%; border-radius: 3px; background: #fbbf24; transition: width 0.5s ease-out;"></div>
+              </div>
+              <span class="sub-label" id="codex-rate-limit-secondary-reset">下次重置: --</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
       <!-- Daily View Container -->
       <div id="daily-view-container">
 

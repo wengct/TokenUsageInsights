@@ -67,6 +67,7 @@ async fn main() {
         .route("/api/:assistant/monthly/:year_month", get(get_monthly_details))
         .route("/api/:assistant/pricing", get(get_pricing))
         .route("/api/:assistant/sync", get(trigger_manual_sync))
+        .route("/api/:assistant/rate-limit", get(get_rate_limit))
         
         // 靜態檔案路由
         .nest_service("/static", ServeDir::new(&static_dir))

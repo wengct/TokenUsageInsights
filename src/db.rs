@@ -1105,3 +1105,57 @@ fn migrate_records(src_conn: &Connection, dest_conn: &mut Connection, assistant:
     Ok(())
 }
 
+pub fn get_latest_codex_rate_limit() -> Option<serde_json::Value> {
+    let codex_dir = get_codex_dir();
+    let sessions_dir = codex_dir.join("sessions");
+    let mut files = find_codex_session_files(&sessions_dir);
+    
+    // Sort descending so that the newest session files are processed first
+    files.sort_by(|a, b| b.cmp(a));
+    
+    for filepath in files {
+        if let Ok(file) = File::open(&filepath) {
+            let reader = BufReader::new(file);
+            let mut last_valid_rate_limit = None;
+            for line_res in reader.lines() {
+                let line = match line_res {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+                let event: serde_json::Value = match serde_json::from_str(&line) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                
+                let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                if event_type == "event_msg" {
+                    if let Some(payload) = event.get("payload") {
+                        if payload.get("type").and_then(|t| t.as_str()) == Some("token_count") {
+                            if let Some(rate_limits) = payload.get("rate_limits") {
+                                // We check if rate_limits is an object and primary is not null
+                                if let Some(primary) = rate_limits.get("primary") {
+                                    if !primary.is_null() {
+                                        let mut res = rate_limits.clone();
+                                        // Include the timestamp of the event for display
+                                        if let Some(obj) = res.as_object_mut() {
+                                            if let Some(timestamp) = event.get("timestamp") {
+                                                obj.insert("timestamp".to_string(), timestamp.clone());
+                                            }
+                                        }
+                                        last_valid_rate_limit = Some(res);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if last_valid_rate_limit.is_some() {
+                return last_valid_rate_limit;
+            }
+        }
+    }
+    None
+}
+
+

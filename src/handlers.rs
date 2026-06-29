@@ -997,3 +997,20 @@ pub async fn trigger_manual_sync(Path(_assistant): Path<String>) -> impl IntoRes
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "status": "error", "message": "執行緒執行失敗" }))).into_response(),
     }
 }
+
+/// API: 獲取 Codex 的 rate limit 資料
+pub async fn get_rate_limit(Path(assistant): Path<String>) -> impl IntoResponse {
+    if assistant != "codex" {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "Only codex is supported" }))).into_response();
+    }
+    
+    let res = tokio::task::spawn_blocking(move || {
+        db::get_latest_codex_rate_limit()
+    }).await.unwrap();
+    
+    match res {
+        Some(val) => (StatusCode::OK, Json(val)).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "No rate limit data found" }))).into_response(),
+    }
+}
+
