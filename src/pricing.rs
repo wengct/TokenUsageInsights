@@ -54,6 +54,33 @@ pub fn load_pricing_rules() -> Vec<PricingRule> {
     rules
 }
 
+fn parse_threshold_rule(name: &str) -> (String, Option<bool>) {
+    let lower = name.to_lowercase();
+    let is_greater = if lower.contains(">272k") || lower.contains("> 272k") {
+        Some(true)
+    } else if lower.contains("<272k") || lower.contains("< 272k") {
+        Some(false)
+    } else {
+        None
+    };
+    
+    let base = lower
+        .replace("<272k", "")
+        .replace(">272k", "")
+        .replace("(<272k)", "")
+        .replace("(>272k)", "")
+        .replace("(<272k context length)", "")
+        .replace("(>272k context length)", "");
+        
+    let normalized = base
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect();
+        
+    (normalized, is_greater)
+}
+
+#[allow(dead_code)]
 pub fn normalize_model_name(name: &str) -> String {
     name.to_lowercase()
         .chars()
@@ -62,19 +89,58 @@ pub fn normalize_model_name(name: &str) -> String {
 }
 
 pub fn calculate_cost(rules: &[PricingRule], model_name: &str, input: u64, output: u64, cache_read: u64) -> f64 {
-    let m_norm = normalize_model_name(model_name);
-    if m_norm.is_empty() {
+    let (m_base, _) = parse_threshold_rule(model_name);
+    if m_base.is_empty() {
         return 0.0;
     }
     
-    let rule = rules.iter().find(|r| {
-        let r_norm = normalize_model_name(&r.model_name);
-        if r_norm.is_empty() {
-            false
-        } else {
-            m_norm.contains(&r_norm) || r_norm.contains(&m_norm)
+    let total_context = input + cache_read + output;
+    let is_long_context = total_context > 272_000;
+
+    // 1. First attempt: exact base name match
+    let mut rule = rules.iter().find(|r| {
+        let (r_base, r_thresh) = parse_threshold_rule(&r.model_name);
+        if r_base.is_empty() {
+            return false;
+        }
+        if r_base != m_base {
+            return false;
+        }
+        match r_thresh {
+            Some(greater) => {
+                if greater {
+                    is_long_context
+                } else {
+                    !is_long_context
+                }
+            }
+            None => true,
         }
     });
+
+    // 2. Fallback: contains base name match
+    if rule.is_none() {
+        rule = rules.iter().find(|r| {
+            let (r_base, r_thresh) = parse_threshold_rule(&r.model_name);
+            if r_base.is_empty() {
+                return false;
+            }
+            let base_matches = m_base.contains(&r_base) || r_base.contains(&m_base);
+            if !base_matches {
+                return false;
+            }
+            match r_thresh {
+                Some(greater) => {
+                    if greater {
+                        is_long_context
+                    } else {
+                        !is_long_context
+                    }
+                }
+                None => true,
+            }
+        });
+    }
 
     if let Some(r) = rule {
         let input_cost = (input as f64 / 1_000_000.0) * r.input_price;
