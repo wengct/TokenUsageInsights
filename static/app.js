@@ -32,6 +32,7 @@ let currentSortDirection = 'desc';  // Default chronological order
 // Monthly daily summary sorting state
 let monthlyDailySortColumn = 'date';
 let monthlyDailySortDirection = 'desc';
+let currentMonthlyChartData = [];
 
 // Yearly monthly summary sorting state
 let yearlyMonthlySortColumn = 'month';
@@ -39,6 +40,7 @@ let yearlyMonthlySortDirection = 'desc';
 let currentYearlyBreakdown = [];
 let currentYearlyData = null;
 let yearlyChartInstance = null;
+let currentYearlyChartData = [];
 
 // Live Auto-Refresh State
 let liveRefreshTimer = null;
@@ -2999,6 +3001,7 @@ function renderYearlyMetricValue(elementId, getter, formatter, agentBreakdown, a
 // =========================================================================
 function renderYearlyChart(monthlyBreakdown) {
   currentYearlyBreakdown = monthlyBreakdown;
+  currentYearlyChartData = [...monthlyBreakdown];
   const canvas = document.getElementById('yearlyTokenChart');
   if (!canvas) return;
 
@@ -3075,7 +3078,7 @@ function renderYearlyChart(monthlyBreakdown) {
       onClick: (event, elements) => {
         if (elements && elements.length > 0) {
           const index = elements[0].index;
-          const selectedEntry = currentYearlyBreakdown[index];
+          const selectedEntry = currentYearlyChartData[index];
           if (selectedEntry && selectedEntry.month) {
             switchToMonthlyMonth(selectedEntry.month);
           }
@@ -3490,6 +3493,7 @@ function renderMonthlyDashboard(data) {
 // =========================================================================
 function renderMonthlyChart(dailyBreakdown) {
   currentMonthlyBreakdown = dailyBreakdown;
+  currentMonthlyChartData = [...dailyBreakdown];
   const canvas = document.getElementById('monthlyTokenChart');
 
   // 提取標籤與數據
@@ -3564,7 +3568,7 @@ function renderMonthlyChart(dailyBreakdown) {
       onClick: (event, elements) => {
         if (elements && elements.length > 0) {
           const index = elements[0].index;
-          const selectedEntry = currentMonthlyBreakdown[index];
+          const selectedEntry = currentMonthlyChartData[index];
           if (selectedEntry && selectedEntry.date) {
             switchToDailyDate(selectedEntry.date);
           }
