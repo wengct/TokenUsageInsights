@@ -294,7 +294,8 @@ body {
 }
 
 #daily-view-container,
-#monthly-view-container {
+#monthly-view-container,
+#yearly-view-container {
   display: flex;
   flex-direction: column;
   gap: 28px;
