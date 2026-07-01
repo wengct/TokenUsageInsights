@@ -407,6 +407,41 @@ pub async fn get_usage_details(Path((assistant, date)): Path<(String, String)>) 
 }
 
 /// API 4: 獲取特定會話的詳細對話歷史還原時間軸
+fn get_git_info(cwd_str: &str) -> (Option<String>, Option<String>) {
+    let path = std::path::Path::new(cwd_str);
+    if !path.exists() {
+        return (None, None);
+    }
+
+    let branch = std::process::Command::new("git")
+        .args(&["symbolic-ref", "--short", "HEAD"])
+        .current_dir(path)
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                None
+            }
+        });
+
+    let repo = std::process::Command::new("git")
+        .args(&["config", "--get", "remote.origin.url"])
+        .current_dir(path)
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                None
+            }
+        });
+
+    (branch, repo)
+}
+
 pub async fn get_session_details(Path((assistant, session_id)): Path<(String, String)>) -> impl IntoResponse {
     // 1. 若 assistant == "all"，需要先在資料庫尋找此 session 屬於哪一個 assistant，並獲取 transcript 路徑
     let session_info: Result<(String, Option<String>), String> = tokio::task::spawn_blocking({
@@ -474,9 +509,21 @@ pub async fn get_session_details(Path((assistant, session_id)): Path<(String, St
 
     // 3. 預先載入 SQLite 中的回合 (turn_no) 增量 token 數據
     let sid_clone = session_id.clone();
-    let db_entries: HashMap<u32, (TokenStats, String)> = tokio::task::spawn_blocking(move || {
+    let (db_entries, session_cwd): (HashMap<u32, (TokenStats, String)>, Option<String>) = tokio::task::spawn_blocking(move || {
         let mut map = HashMap::new();
+        let mut session_cwd = None;
         if let Ok(conn) = db::get_db_conn() {
+            // 查詢會話的 cwd
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT cwd FROM usage_entries WHERE session_id = ? AND cwd IS NOT NULL LIMIT 1"
+            ) {
+                if let Ok(mut rows) = stmt.query(params![sid_clone]) {
+                    if let Some(row) = rows.next().ok().flatten() {
+                        session_cwd = row.get::<_, String>(0).ok();
+                    }
+                }
+            }
+
             if let Ok(mut stmt) = conn.prepare(
                 "SELECT turn_no, delta_input, delta_output, delta_cache_read, delta_reasoning, delta_total, model 
                  FROM usage_entries WHERE session_id = ? ORDER BY turn_no ASC"
@@ -500,8 +547,8 @@ pub async fn get_session_details(Path((assistant, session_id)): Path<(String, St
                 }
             }
         }
-        map
-    }).await.unwrap_or_default();
+        (map, session_cwd)
+    }).await.unwrap_or_else(|_| (HashMap::new(), None));
 
     let reader = BufReader::new(file);
     let mut timeline = Vec::new();
@@ -519,6 +566,25 @@ pub async fn get_session_details(Path((assistant, session_id)): Path<(String, St
             parse_codex_timeline(reader, &db_entries, &mut timeline, &mut metadata);
         }
         _ => {}
+    }
+
+    // 補充或覆寫 Git 與 CWD 相關資訊（若 metadata 未包含但資料庫中有紀錄）
+    if let Some(ref cwd) = session_cwd {
+        if !metadata.contains_key("cwd") {
+            metadata.insert("cwd".to_string(), serde_json::Value::String(cwd.clone()));
+        }
+        
+        let (branch, repo) = get_git_info(cwd);
+        if !metadata.contains_key("git_branch") {
+            if let Some(b) = branch {
+                metadata.insert("git_branch".to_string(), serde_json::Value::String(b));
+            }
+        }
+        if !metadata.contains_key("repository") {
+            if let Some(r) = repo {
+                metadata.insert("repository".to_string(), serde_json::Value::String(r));
+            }
+        }
     }
 
     // 計算該會話的加總 Token 資料，供 metadata 使用
