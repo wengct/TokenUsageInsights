@@ -3072,6 +3072,18 @@ function renderYearlyChart(monthlyBreakdown) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      onClick: (event, elements) => {
+        if (elements && elements.length > 0) {
+          const index = elements[0].index;
+          const selectedEntry = currentYearlyBreakdown[index];
+          if (selectedEntry && selectedEntry.month) {
+            switchToMonthlyMonth(selectedEntry.month);
+          }
+        }
+      },
+      onHover: (event, activeElements) => {
+        canvas.style.cursor = activeElements.length ? 'pointer' : 'default';
+      },
       interaction: {
         mode: 'index',
         intersect: false,
