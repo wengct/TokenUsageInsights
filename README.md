@@ -247,6 +247,24 @@ cargo run
    * **重啟服務**：`systemctl --user restart token-usage-insights.service`
    * **停止服務**：`systemctl --user stop token-usage-insights.service`
 
+### 三、專案更新與重新建置
+當本專案有新版本時，請按照以下步驟更新與重新建置：
+
+1. **拉取最新程式碼**：
+   ```bash
+   git pull
+   ```
+2. **重新編譯**：
+   * 如果您是使用**本地直接啟動**，直接執行 `cargo run`，Rust 就會自動偵測變更並重新編譯。
+   * 如果您是使用 **Systemd 常駐背景服務**，請重新編譯發行版本：
+     ```bash
+     cargo build --release
+     ```
+3. **重啟服務（僅限 Systemd 使用者）**：
+   ```bash
+   systemctl --user restart token-usage-insights.service
+   ```
+
 ---
 
 ## ⚙️ 進階配置與環境變數

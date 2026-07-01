@@ -247,6 +247,24 @@ Open [**`http://localhost:3003`**](http://localhost:3003) in your browser to sta
    * **Restart Service**: `systemctl --user restart token-usage-insights.service`
    * **Stop Service**: `systemctl --user stop token-usage-insights.service`
 
+### 3. Project Update & Rebuild
+When a new version of the project is available, follow these steps to update and rebuild:
+
+1. **Pull the latest code**:
+   ```bash
+   git pull
+   ```
+2. **Rebuild the project**:
+   * If running **locally**, simply execute `cargo run`, and Rust will compile the changes automatically.
+   * If running as a **Systemd background service**, rebuild the release binary:
+     ```bash
+     cargo build --release
+     ```
+3. **Restart the service (Systemd users only)**:
+   ```bash
+   systemctl --user restart token-usage-insights.service
+   ```
+
 ---
 
 ## ⚙️ Advanced Configurations & Env Variables
