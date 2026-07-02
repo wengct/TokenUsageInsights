@@ -34,8 +34,8 @@
         <button id="sidebar-close-btn" class="sidebar-close-btn" title="關閉側邊欄">❌</button>
       </div>
 
-      <!-- Section 0: Assistant Selector -->
-      <div class="sidebar-section">
+      <!-- Section 0: Assistant Selector (Hidden, logic runs in background) -->
+      <div class="sidebar-section" style="display: none !important;">
         <h3 data-i18n="select_assistant">選擇 Agent 類型</h3>
         <div class="assistant-badges-container" id="assistant-badges-container">
           <button class="assistant-badge-btn active" data-value="antigravity" data-i18n="assistant_antigravity"><img class="assistant-logo" src="/static/antigravity.webp" alt="Antigravity" /> Antigravity CLI</button>
@@ -44,12 +44,30 @@
         </div>
       </div>
 
-      <!-- Navigation Tabs -->
-      <div class="sidebar-section">
+      <!-- Navigation Tabs (Hidden, logic runs in background) -->
+      <div class="sidebar-section" style="display: none !important;">
         <div class="tabs-nav">
-          <button class="nav-tab active" id="tab-btn-daily" data-i18n="tab_daily">📊 每日</button>
-          <button class="nav-tab" id="tab-btn-monthly" data-i18n="tab_monthly">📅 月度</button>
-          <button class="nav-tab" id="tab-btn-yearly" data-i18n="tab_yearly">📅 年度</button>
+          <button class="nav-tab active" id="tab-btn-daily" data-i18n="tab_daily">每日</button>
+          <button class="nav-tab" id="tab-btn-monthly" data-i18n="tab_monthly">月度</button>
+          <button class="nav-tab" id="tab-btn-yearly" data-i18n="tab_yearly">年度</button>
+        </div>
+      </div>
+
+      <!-- Section 0.5: Combined Agent Dropdown -->
+      <div class="sidebar-section" style="padding-bottom: 0; margin-bottom: -10px; display: flex; flex-direction: column; gap: 16px;">
+        <!-- Row 1: Agent Select -->
+        <div style="display: flex; flex-direction: column; gap: 6px; position: relative; width: 100%;">
+          <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;" data-i18n="select_assistant_label">Agent 類型</span>
+          <div class="hover-dropdown" id="agent-hover-dropdown">
+            <div class="hover-dropdown-trigger" id="agent-dropdown-trigger">
+              <span id="agent-dropdown-label">Antigravity CLI</span>
+            </div>
+            <div class="hover-dropdown-options">
+              <div class="hover-dropdown-option" data-value="antigravity" data-i18n="agent_antigravity">Antigravity CLI</div>
+              <div class="hover-dropdown-option" data-value="copilot" data-i18n="agent_copilot">GitHub Copilot CLI</div>
+              <div class="hover-dropdown-option" data-value="codex" data-i18n="agent_codex">Codex CLI</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -57,17 +75,27 @@
       <div class="sidebar-section" id="daily-selector-section">
         <h3 data-i18n="select_date">選擇日期</h3>
         <div class="date-selector-wrapper" style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
-          <div style="display: flex; gap: 8px; width: 100%;">
-            <input type="date" id="date-select" class="premium-date-input" style="flex: 1;">
-            <button id="btn-reload-daily" class="reload-btn" data-i18n-title="reload_data" title="重新載入數據">🔄</button>
+          <div style="display: flex; gap: 8px; width: 100%; align-items: stretch;">
+            <div class="hover-dropdown tab-hover-dropdown" style="flex: 0 0 75px; min-width: 75px;">
+              <div class="hover-dropdown-trigger" style="height: 100%; display: flex; align-items: center; justify-content: space-between; border-radius: 12px; padding: 12px 10px; background: var(--bg-select); border: 1px solid var(--glass-border); color: var(--text-primary); font-family: var(--font-body); font-weight: 500;">
+                <span class="tab-dropdown-label">每日</span>
+                <span style="font-size: 8px; opacity: 0.6; margin-left: 4px;">▼</span>
+              </div>
+              <div class="hover-dropdown-options">
+                <div class="hover-dropdown-option" data-value="daily" data-i18n="tab_daily">每日</div>
+                <div class="hover-dropdown-option" data-value="monthly" data-i18n="tab_monthly">月度</div>
+                <div class="hover-dropdown-option" data-value="yearly" data-i18n="tab_yearly">年度</div>
+              </div>
+            </div>
+            <input type="date" id="date-select" class="premium-date-input" style="flex: 1.5; min-width: 120px; margin: 0; box-sizing: border-box;">
           </div>
           <div style="display: flex; gap: 8px; width: 100%;">
             <button id="btn-prev-day" class="today-btn" style="flex: 1; padding: 12px 8px;" title="前一天">◀</button>
             <button id="btn-today" class="today-btn" style="flex: 2; padding: 12px 8px;">
-              <span>📅</span>
               <span data-i18n="today_btn">今日</span>
             </button>
             <button id="btn-next-day" class="today-btn" style="flex: 1; padding: 12px 8px;" title="後一天">▶</button>
+            <button id="btn-reload-daily" class="reload-btn" style="width: 45px; height: auto;" data-i18n-title="reload_data" title="重新載入數據">🔄</button>
           </div>
         </div>
         
@@ -106,19 +134,29 @@
       <div class="sidebar-section hidden" id="monthly-selector-section">
         <h3 data-i18n="select_month">選擇月份</h3>
         <div class="date-selector-wrapper" style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
-          <div style="display: flex; gap: 8px; width: 100%;">
-            <select id="month-select" class="premium-select" style="flex: 1;">
+          <div style="display: flex; gap: 8px; width: 100%; align-items: stretch;">
+            <div class="hover-dropdown tab-hover-dropdown" style="flex: 0 0 75px; min-width: 75px;">
+              <div class="hover-dropdown-trigger" style="height: 100%; display: flex; align-items: center; justify-content: space-between; border-radius: 12px; padding: 12px 10px; background: var(--bg-select); border: 1px solid var(--glass-border); color: var(--text-primary); font-family: var(--font-body); font-weight: 500;">
+                <span class="tab-dropdown-label">月度</span>
+                <span style="font-size: 8px; opacity: 0.6; margin-left: 4px;">▼</span>
+              </div>
+              <div class="hover-dropdown-options">
+                <div class="hover-dropdown-option" data-value="daily" data-i18n="tab_daily">每日</div>
+                <div class="hover-dropdown-option" data-value="monthly" data-i18n="tab_monthly">月度</div>
+                <div class="hover-dropdown-option" data-value="yearly" data-i18n="tab_yearly">年度</div>
+              </div>
+            </div>
+            <select id="month-select" class="premium-select" style="flex: 1.5; min-width: 120px; margin: 0; box-sizing: border-box;">
               <option value="" disabled selected data-i18n="loading">載入中...</option>
             </select>
-            <button id="btn-reload-monthly" class="reload-btn" data-i18n-title="reload_data" title="重新載入數據">🔄</button>
           </div>
           <div style="display: flex; gap: 8px; width: 100%;">
             <button id="btn-prev-month" class="today-btn" style="flex: 1; padding: 12px 8px;" data-i18n-title="prev_month_btn" title="上個月">◀</button>
             <button id="btn-this-month" class="today-btn" style="flex: 2; padding: 12px 8px;">
-              <span>📅</span>
               <span data-i18n="this_month_btn">今月</span>
             </button>
             <button id="btn-next-month" class="today-btn" style="flex: 1; padding: 12px 8px;" data-i18n-title="next_month_btn" title="下個月">▶</button>
+            <button id="btn-reload-monthly" class="reload-btn" style="width: 45px; height: auto;" data-i18n-title="reload_data" title="重新載入數據">🔄</button>
           </div>
         </div>
       </div>
@@ -127,28 +165,38 @@
       <div class="sidebar-section hidden" id="yearly-selector-section">
         <h3 data-i18n="select_year">選擇年份</h3>
         <div class="date-selector-wrapper" style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
-          <div style="display: flex; gap: 8px; width: 100%;">
-            <select id="year-select" class="premium-select" style="flex: 1;">
+          <div style="display: flex; gap: 8px; width: 100%; align-items: stretch;">
+            <div class="hover-dropdown tab-hover-dropdown" style="flex: 0 0 75px; min-width: 75px;">
+              <div class="hover-dropdown-trigger" style="height: 100%; display: flex; align-items: center; justify-content: space-between; border-radius: 12px; padding: 12px 10px; background: var(--bg-select); border: 1px solid var(--glass-border); color: var(--text-primary); font-family: var(--font-body); font-weight: 500;">
+                <span class="tab-dropdown-label">年度</span>
+                <span style="font-size: 8px; opacity: 0.6; margin-left: 4px;">▼</span>
+              </div>
+              <div class="hover-dropdown-options">
+                <div class="hover-dropdown-option" data-value="daily" data-i18n="tab_daily">每日</div>
+                <div class="hover-dropdown-option" data-value="monthly" data-i18n="tab_monthly">月度</div>
+                <div class="hover-dropdown-option" data-value="yearly" data-i18n="tab_yearly">年度</div>
+              </div>
+            </div>
+            <select id="year-select" class="premium-select" style="flex: 1.5; min-width: 120px; margin: 0; box-sizing: border-box;">
               <option value="" disabled selected data-i18n="loading">載入中...</option>
             </select>
-            <button id="btn-reload-yearly" class="reload-btn" data-i18n-title="reload_data" title="重新載入數據">🔄</button>
           </div>
           <div style="display: flex; gap: 8px; width: 100%;">
             <button id="btn-prev-year" class="today-btn" style="flex: 1; padding: 12px 8px;" data-i18n-title="prev_year_btn" title="上一年">◀</button>
             <button id="btn-this-year" class="today-btn" style="flex: 2; padding: 12px 8px;">
-              <span>📅</span>
               <span data-i18n="this_year_btn">今年</span>
             </button>
             <button id="btn-next-year" class="today-btn" style="flex: 1; padding: 12px 8px;" data-i18n-title="next_year_btn" title="下一年">▶</button>
+            <button id="btn-reload-yearly" class="reload-btn" style="width: 45px; height: auto;" data-i18n-title="reload_data" title="重新載入數據">🔄</button>
           </div>
         </div>
       </div>
 
       <!-- Section 1.5: Codex CLI Settings (visible only when Codex is selected and daily tab is active) -->
       <div class="sidebar-section hidden" id="codex-control-panel">
-        <h3 style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+        <h3 style="display: flex; align-items: center; gap: 4px; width: 100%;">
           <span data-i18n="codex_control_title">Codex 憑證</span>
-          <button id="btn-codex-auth-tip" class="reload-btn" style="width: 20px; height: 20px; min-width: 20px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; margin: 0; border-radius: 50%; opacity: 0.85;" data-i18n-title="codex_auth_tip_title" title="💡 提示：您可以在 ~/.codex/auth/ 目錄下放入多個不同的 JSON 憑證檔（例如 (a)auth.json、(b)auth.json），並透過下拉選單在看板上即時切換套用，系統將自動覆蓋並套用至 ~/.codex/auth.json。">💡</button>
+          <span id="codex-auth-tip" style="cursor: help; opacity: 0.8; font-size: 11px;" data-i18n-title="codex_auth_tip_title" title="💡 提示：您可以在 ~/.codex/auth/ 目錄下放入多個不同的 JSON 憑證檔（例如 (a)auth.json、(b)auth.json），並透過下拉選單在看板上即時切換套用，系統將自動覆蓋並套用至 ~/.codex/auth.json。">💡</span>
         </h3>
         
         <!-- Auth Switcher -->

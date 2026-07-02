@@ -82,13 +82,18 @@ const i18n = {
   'zh-TW': {
     title: 'AI CLI Token 看板',
     select_assistant: '選擇 Agent 類型',
+    select_assistant_label: 'Agent 類型',
+    time_dimension_label: '時間維度',
+    agent_antigravity: 'Antigravity CLI',
+    agent_copilot: 'GitHub Copilot CLI',
+    agent_codex: 'Codex CLI',
     assistant_all: '🌟 全部 Agent (總覽)',
     assistant_antigravity: '<img class="assistant-logo" src="/static/antigravity.webp" alt="Antigravity" /> Antigravity CLI',
     assistant_copilot: '<img class="assistant-logo" src="/static/githubcopilot.webp" alt="Copilot" /> GitHub Copilot CLI',
     assistant_codex: '<img class="assistant-logo" src="/static/codex.webp" alt="Codex" /> Codex CLI',
     col_assistant: 'Agent',
-    tab_daily: '📊 每日',
-    tab_monthly: '📅 月度',
+    tab_daily: '每日',
+    tab_monthly: '月度',
     select_date: '選擇日期',
     today_btn: '今日',
     this_month_btn: '今月',
@@ -159,7 +164,7 @@ const i18n = {
     monthly_requests_count: '總請求: {count} 次',
     monthly_projects_title: '🏢 最常活動的專案目錄',
     monthly_models_title: '🤖 使用的模型佔比',
-    tab_yearly: '📅 年度',
+    tab_yearly: '年度',
     select_year: '選擇年份',
     this_year_btn: '今年',
     prev_year_btn: '上一年',
@@ -335,13 +340,18 @@ const i18n = {
   'en': {
     title: 'AI CLI Token Insights',
     select_assistant: 'Select Agent',
+    select_assistant_label: 'Agent Type',
+    time_dimension_label: 'Time Unit',
+    agent_antigravity: 'Antigravity CLI',
+    agent_copilot: 'GitHub Copilot CLI',
+    agent_codex: 'Codex CLI',
     assistant_all: '🌟 All Agents (Overview)',
     assistant_antigravity: '<img class="assistant-logo" src="/static/antigravity.webp" alt="Antigravity" /> Antigravity CLI',
     assistant_copilot: '<img class="assistant-logo" src="/static/githubcopilot.webp" alt="Copilot" /> GitHub Copilot CLI',
     assistant_codex: '<img class="assistant-logo" src="/static/codex.webp" alt="Codex" /> Codex CLI',
     col_assistant: 'Agent',
-    tab_daily: '📊 Daily',
-    tab_monthly: '📅 Monthly',
+    tab_daily: 'Daily',
+    tab_monthly: 'Monthly',
     select_date: 'Select Date',
     today_btn: 'Today',
     this_month_btn: 'This Month',
@@ -412,7 +422,7 @@ const i18n = {
     monthly_requests_count: 'Total Requests: {count}',
     monthly_projects_title: '🏢 Most Active Project Directories',
     monthly_models_title: '🤖 Model Usage Breakdown',
-    tab_yearly: '📅 Yearly',
+    tab_yearly: 'Yearly',
     select_year: 'Select Year',
     this_year_btn: 'This Year',
     prev_year_btn: 'Last Year',
@@ -761,6 +771,22 @@ function initApp() {
 
         currentAssistant = btn.getAttribute('data-value');
         setCookie('selected_agent', currentAssistant);
+        
+        // Update custom hover dropdown UI
+        const agentLabelEl = document.getElementById('agent-dropdown-label');
+        const agentHoverOpts = document.querySelectorAll('#agent-hover-dropdown .hover-dropdown-option');
+        if (agentHoverOpts.length > 0) {
+          agentHoverOpts.forEach(opt => {
+            if (opt.getAttribute('data-value') === currentAssistant) {
+              opt.classList.add('active');
+              if (agentLabelEl) {
+                agentLabelEl.setAttribute('data-i18n', 'agent_' + currentAssistant);
+              }
+            } else {
+              opt.classList.remove('active');
+            }
+          });
+        }
         updateLanguageUI();
         fetchPricingRules();
 
@@ -803,6 +829,49 @@ function initApp() {
   fetchMonths();
   // 載入年份清單
   fetchYears();
+
+  // Initialize and synchronize custom hover-dropdown selectors
+  const agentHoverOpts = document.querySelectorAll('#agent-hover-dropdown .hover-dropdown-option');
+  const tabHoverOpts = document.querySelectorAll('.tab-hover-dropdown .hover-dropdown-option');
+  const agentLabelEl = document.getElementById('agent-dropdown-label');
+  const tabLabelEls = document.querySelectorAll('.tab-dropdown-label');
+
+  if (agentLabelEl) {
+    agentLabelEl.setAttribute('data-i18n', 'agent_' + currentAssistant);
+  }
+  agentHoverOpts.forEach(opt => {
+    if (opt.getAttribute('data-value') === currentAssistant) {
+      opt.classList.add('active');
+    } else {
+      opt.classList.remove('active');
+    }
+    opt.addEventListener('click', () => {
+      const val = opt.getAttribute('data-value');
+      const btn = document.querySelector(`.assistant-badge-btn[data-value="${val}"]`);
+      if (btn) btn.click();
+    });
+  });
+
+  if (tabLabelEls.length > 0) {
+    tabLabelEls.forEach(labelEl => {
+      const activeTabOpt = document.querySelector(`.tab-hover-dropdown .hover-dropdown-option[data-value="${activeTab}"]`);
+      if (activeTabOpt) {
+        labelEl.setAttribute('data-i18n', activeTabOpt.getAttribute('data-i18n'));
+      }
+    });
+  }
+  tabHoverOpts.forEach(opt => {
+    if (opt.getAttribute('data-value') === activeTab) {
+      opt.classList.add('active');
+    } else {
+      opt.classList.remove('active');
+    }
+    opt.addEventListener('click', () => {
+      const val = opt.getAttribute('data-value');
+      const btn = document.getElementById(`tab-btn-${val}`);
+      if (btn) btn.click();
+    });
+  });
 
   // Initialize language UI translation
   updateLanguageUI();
@@ -1307,6 +1376,27 @@ function switchTab(tab) {
   if (activeTab === tab) return;
   activeTab = tab;
   setCookie('active_tab', tab);
+
+  // Update custom hover dropdown UI
+  const tabLabelEls = document.querySelectorAll('.tab-dropdown-label');
+  const tabHoverOpts = document.querySelectorAll('.tab-hover-dropdown .hover-dropdown-option');
+  if (tabHoverOpts.length > 0) {
+    tabHoverOpts.forEach(opt => {
+      if (opt.getAttribute('data-value') === tab) {
+        opt.classList.add('active');
+        if (tabLabelEls.length > 0) {
+          tabLabelEls.forEach(labelEl => {
+            labelEl.setAttribute('data-i18n', opt.getAttribute('data-i18n'));
+          });
+        }
+      } else {
+        opt.classList.remove('active');
+      }
+    });
+    if (typeof updateLanguageUI === 'function') {
+      updateLanguageUI();
+    }
+  }
 
   const tabBtnDaily = document.getElementById('tab-btn-daily');
   const tabBtnMonthly = document.getElementById('tab-btn-monthly');
