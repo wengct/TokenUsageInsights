@@ -2154,7 +2154,20 @@ pub async fn get_codex_reset_info(Path(assistant): Path<String>) -> impl IntoRes
         let active_auth_file = codex_dir.join("auth.json");
 
         let npx_path = find_npx_path();
-        let mut cmd = std::process::Command::new(npx_path);
+        let mut cmd = std::process::Command::new(&npx_path);
+
+        if let Some(bin_dir) = npx_path.parent() {
+            if let Ok(current_path) = std::env::var("PATH") {
+                let new_path = std::env::join_paths(
+                    std::iter::once(bin_dir.to_path_buf())
+                        .chain(std::env::split_paths(&current_path)),
+                );
+                if let Ok(new_path_val) = new_path {
+                    cmd.env("PATH", new_path_val);
+                }
+            }
+        }
+
         cmd.args(["-y", "@willh/codex-reset-checker", "--json"]);
         if active_auth_file.exists() {
             cmd.arg("--auth").arg(&active_auth_file);
