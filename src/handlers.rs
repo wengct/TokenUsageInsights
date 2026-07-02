@@ -1966,9 +1966,72 @@ pub async fn get_rate_limit(Path(assistant): Path<String>) -> impl IntoResponse 
     }
 }
 
+fn decode_base64(s: &str) -> Option<Vec<u8>> {
+    let mut s = s.replace('-', "+").replace('_', "/");
+    while s.len() % 4 != 0 {
+        s.push('=');
+    }
+    let bytes = s.as_bytes();
+    let mut result = Vec::new();
+    let mut buffer = 0u32;
+    let mut bits = 0;
+    for &b in bytes {
+        if b == b'=' {
+            break;
+        }
+        let val = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 26,
+            b'0'..=b'9' => b - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        buffer = (buffer << 6) | val as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            result.push((buffer >> bits) as u8);
+        }
+    }
+    Some(result)
+}
+
+fn get_codex_auth_identity(path: &std::path::Path) -> (Option<String>, Option<String>) {
+    if let Ok(content) = std::fs::read_to_string(path) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(tokens) = v.get("tokens") {
+                if let Some(id_token) = tokens.get("id_token").and_then(|t| t.as_str()) {
+                    let parts: Vec<&str> = id_token.split('.').collect();
+                    if parts.len() >= 2 {
+                        if let Some(payload_bytes) = decode_base64(parts[1]) {
+                            if let Ok(payload_json) =
+                                serde_json::from_slice::<serde_json::Value>(&payload_bytes)
+                            {
+                                let name = payload_json
+                                    .get("name")
+                                    .and_then(|n| n.as_str())
+                                    .map(|s| s.to_string());
+                                let email = payload_json
+                                    .get("email")
+                                    .and_then(|e| e.as_str())
+                                    .map(|s| s.to_string());
+                                return (name, email);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (None, None)
+}
+
 #[derive(Serialize)]
 pub struct CodexAuthInfo {
     pub name: String,
+    pub display_name: String,
+    pub email: Option<String>,
     pub active: bool,
 }
 
@@ -2023,8 +2086,12 @@ pub async fn get_codex_auth_configs(Path(assistant): Path<String>) -> impl IntoR
                                     }
                                 }
                             }
+                            let (name_opt, email_opt) = get_codex_auth_identity(&path);
+                            let display_name = name_opt.unwrap_or_else(|| filename.to_string());
                             configs.push(CodexAuthInfo {
                                 name: filename.to_string(),
+                                display_name,
+                                email: email_opt,
                                 active,
                             });
                         }

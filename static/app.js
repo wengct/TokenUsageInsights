@@ -4677,14 +4677,19 @@ async function updateCodexAuthSwitcher() {
 
     let activeFound = false;
     let activeName = '';
+    let activeEmail = '';
     data.configs.forEach(cfg => {
       const opt = document.createElement('option');
       opt.value = cfg.name;
-      opt.textContent = cfg.name;
+      opt.textContent = cfg.display_name || cfg.name;
+      if (cfg.email) {
+        opt.title = cfg.email;
+      }
       if (cfg.active) {
         opt.selected = true;
         activeFound = true;
-        activeName = cfg.name;
+        activeName = cfg.display_name || cfg.name;
+        activeEmail = cfg.email || '';
       }
       selectEl.appendChild(opt);
     });
@@ -4698,7 +4703,7 @@ async function updateCodexAuthSwitcher() {
     if (statusEl) {
       if (activeFound) {
         statusEl.textContent = t('auth_status').replace('{name}', activeName);
-        statusEl.title = activeName;
+        statusEl.title = activeEmail || activeName;
       } else {
         statusEl.textContent = t('auth_status_custom');
         statusEl.removeAttribute('title');
